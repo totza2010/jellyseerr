@@ -76,6 +76,17 @@ interface Media {
   container: string;
   videoFrameRate: string;
   videoProfile: string;
+  Part: Part[];
+}
+
+interface Part {
+  id: number;
+  key: string;
+  duration: number;
+  file: string;
+  size: number;
+  container: string;
+  videoProfile: string;
 }
 
 interface PlexMetadataResponse {

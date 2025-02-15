@@ -120,6 +120,7 @@ class SonarrScanner
           totalEpisodes: season.statistics?.totalEpisodeCount ?? 0,
           processing: season.monitored && totalAvailableEpisodes === 0,
           is4kOverride: server4k,
+          allEpisodes: [],
         });
       }
 

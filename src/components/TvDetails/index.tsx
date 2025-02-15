@@ -163,12 +163,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     []
   );
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: data?.mediaInfo?.mediaUrl,
-    mediaUrl4k: data?.mediaInfo?.mediaUrl4k,
-    iOSPlexUrl: data?.mediaInfo?.iOSPlexUrl,
-    iOSPlexUrl4k: data?.mediaInfo?.iOSPlexUrl4k,
-  });
+  const deepLinks = useDeepLinks(data?.mediaInfo);
+
+  if (!deepLinks) return null;
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -181,28 +178,28 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   const mediaLinks: PlayButtonLink[] = [];
 
   if (
-    plexUrl &&
+    deepLinks.mediaUrl &&
     hasPermission([Permission.REQUEST, Permission.REQUEST_TV], {
       type: 'or',
     })
   ) {
     mediaLinks.push({
       text: getAvalaibleMediaServerName(),
-      url: plexUrl,
+      url: deepLinks.mediaUrl,
       svg: <PlayIcon />,
     });
   }
 
   if (
     settings.currentSettings.series4kEnabled &&
-    plexUrl4k &&
+    deepLinks.mediaUrl4k &&
     hasPermission([Permission.REQUEST_4K, Permission.REQUEST_4K_TV], {
       type: 'or',
     })
   ) {
     mediaLinks.push({
       text: getAvalaible4kMediaServerName(),
-      url: plexUrl4k,
+      url: deepLinks.mediaUrl4k,
       svg: <PlayIcon />,
     });
   }
@@ -566,7 +563,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               inProgress={(data.mediaInfo?.downloadStatus ?? []).length > 0}
               tmdbId={data.mediaInfo?.tmdbId}
               mediaType="tv"
-              plexUrl={plexUrl}
+              plexUrl={deepLinks.mediaUrl}
               serviceUrl={data.mediaInfo?.serviceUrl}
             />
             {settings.currentSettings.series4kEnabled &&
@@ -590,7 +587,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   }
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="tv"
-                  plexUrl={plexUrl4k}
+                  plexUrl={deepLinks.mediaUrl4k}
                   serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
               )}
@@ -844,6 +841,26 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   return null;
                 }
 
+                const seasonLinks = deepLinks.seasons.find(
+                  (s) => s.seasonNumber === season.seasonNumber
+                );
+
+                const mediaSeasonLinks: PlayButtonLink[] = [];
+
+                if (
+                  seasonLinks?.mediaUrl &&
+                  hasPermission([Permission.REQUEST, Permission.REQUEST_TV], {
+                    type: 'or',
+                  })
+                ) {
+                  if (seasonLinks && seasonLinks.mediaUrl) {
+                    mediaSeasonLinks.push({
+                      text: getAvalaibleMediaServerName(),
+                      url: seasonLinks.mediaUrl,
+                      svg: <PlayIcon />,
+                    });
+                  }
+                }
                 return (
                   <Disclosure key={`season-discoslure-${season.seasonNumber}`}>
                     {({ open }) => (
@@ -868,6 +885,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                 episodeCount: season.episodeCount,
                               })}
                             </Badge>
+                            <PlayButton links={mediaSeasonLinks} />
                           </div>
                           {((!mSeason &&
                             request?.status === MediaRequestStatus.APPROVED) ||
@@ -1036,6 +1054,12 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                           <Disclosure.Panel className="w-full rounded-b-md border-b border-l border-r border-gray-700 px-4 pb-2">
                             <Season
                               tvId={data.id}
+                              season={
+                                data?.mediaInfo?.seasons.find(
+                                  (s) => s.seasonNumber === season.seasonNumber
+                                ) ?? null
+                              }
+                              episodeLink={seasonLinks?.episodes}
                               seasonNumber={season.seasonNumber}
                             />
                           </Disclosure.Panel>
@@ -1273,7 +1297,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 tvdbId={data.externalIds.tvdbId}
                 imdbId={data.externalIds.imdbId}
                 rtUrl={ratingData?.url}
-                mediaUrl={plexUrl ?? plexUrl4k}
+                mediaUrl={deepLinks.mediaUrl ?? deepLinks.mediaUrl4k}
               />
             </div>
           </div>

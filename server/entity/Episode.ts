@@ -1,5 +1,5 @@
-import { MediaStatus } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
+import Part from '@server/entity/Part';
 import { getSettings } from '@server/lib/settings';
 import {
   AfterLoad,
@@ -11,16 +11,15 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import Episode from './Episode';
-import Media from './Media';
+import Season from './Season';
 
 @Entity()
-class Season {
+class Episode {
   @PrimaryGeneratedColumn()
   public id: number;
 
   @Column()
-  public seasonNumber: number;
+  public episodeNumber: number;
 
   @Column({ nullable: true, type: 'varchar' })
   public ratingKey?: string | null;
@@ -31,22 +30,16 @@ class Season {
 
   public tautulliUrl?: string;
 
-  @Column({ type: 'int', default: MediaStatus.UNKNOWN })
-  public status: MediaStatus;
-
-  @Column({ type: 'int', default: MediaStatus.UNKNOWN })
-  public status4k: MediaStatus;
-
-  @OneToMany(() => Episode, (episode) => episode.season, {
+  @OneToMany(() => Part, (part) => part.episode, {
     cascade: true,
     eager: true,
   })
-  public episodes: Episode[];
+  public part: Part[];
 
-  @ManyToOne(() => Media, (media) => media.seasons, {
+  @ManyToOne(() => Season, (season) => season.episodes, {
     onDelete: 'CASCADE',
   })
-  public media: Promise<Media>;
+  public season: Promise<Season>;
 
   @CreateDateColumn()
   public createdAt: Date;
@@ -54,7 +47,7 @@ class Season {
   @UpdateDateColumn()
   public updatedAt: Date;
 
-  constructor(init?: Partial<Season>) {
+  constructor(init?: Partial<Episode>) {
     Object.assign(this, init);
   }
 
@@ -81,4 +74,4 @@ class Season {
   }
 }
 
-export default Season;
+export default Episode;

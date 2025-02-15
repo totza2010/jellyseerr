@@ -91,13 +91,6 @@ const IssueDetails = () => {
       : null
   );
 
-  const { mediaUrl, mediaUrl4k } = useDeepLinks({
-    mediaUrl: data?.mediaInfo?.mediaUrl,
-    mediaUrl4k: data?.mediaInfo?.mediaUrl4k,
-    iOSPlexUrl: data?.mediaInfo?.iOSPlexUrl,
-    iOSPlexUrl4k: data?.mediaInfo?.iOSPlexUrl4k,
-  });
-
   const CommentSchema = Yup.object().shape({
     message: Yup.string().required(),
   });
@@ -106,6 +99,10 @@ const IssueDetails = () => {
     (opt) => opt.issueType === issueData?.issueType
   );
   const settings = useSettings();
+
+  const deepLinks = useDeepLinks(data?.mediaInfo);
+
+  if (!deepLinks) return null;
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -382,7 +379,7 @@ const IssueDetails = () => {
               {issueData?.media.mediaUrl && (
                 <Button
                   as="a"
-                  href={mediaUrl}
+                  href={deepLinks.mediaUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full"
@@ -430,7 +427,7 @@ const IssueDetails = () => {
               {issueData?.media.mediaUrl4k && (
                 <Button
                   as="a"
-                  href={mediaUrl4k}
+                  href={deepLinks.mediaUrl4k}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full"
@@ -656,7 +653,7 @@ const IssueDetails = () => {
             {issueData?.media.mediaUrl && (
               <Button
                 as="a"
-                href={mediaUrl}
+                href={deepLinks.mediaUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full"
@@ -703,7 +700,7 @@ const IssueDetails = () => {
             {issueData?.media.mediaUrl4k && (
               <Button
                 as="a"
-                href={mediaUrl4k}
+                href={deepLinks.mediaUrl4k}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full"

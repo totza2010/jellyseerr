@@ -1,7 +1,9 @@
 import TheMovieDb from '@server/api/themoviedb';
 import { MediaStatus, MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import Episode from '@server/entity/Episode';
 import Media from '@server/entity/Media';
+import Part from '@server/entity/Part';
 import Season from '@server/entity/Season';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -43,11 +45,24 @@ interface ProcessOptions {
 
 export interface ProcessableSeason {
   seasonNumber: number;
+  ratingKey?: string;
   totalEpisodes: number;
   episodes: number;
   episodes4k: number;
   is4kOverride?: boolean;
   processing?: boolean;
+  allEpisodes: allEpisodes[];
+}
+
+export interface allEpisodes {
+  episodeNumber: number;
+  ratingKey?: string;
+  part?: part[];
+}
+
+export interface part {
+  file: string;
+  size?: number;
 }
 
 class BaseScanner<T> {
@@ -253,6 +268,8 @@ class BaseScanner<T> {
       ).length;
 
       for (const season of seasons) {
+        // const episodes: Episode[] = [];
+
         const existingSeason = media?.seasons.find(
           (es) => es.seasonNumber === season.seasonNumber
         );
@@ -297,10 +314,15 @@ class BaseScanner<T> {
               : season.is4kOverride && season.processing
               ? MediaStatus.PROCESSING
               : existingSeason.status4k;
+
+          //           existingSeason.episodes = [];
+          // this.log(JSON.stringify(season.allEpisodes));
+          //           existingSeason.episodes = season.allEpisodes ?? [];
         } else {
           newSeasons.push(
             new Season({
               seasonNumber: season.seasonNumber,
+              ratingKey: season.ratingKey,
               status:
                 season.totalEpisodes === season.episodes && season.episodes > 0
                   ? MediaStatus.AVAILABLE
@@ -319,8 +341,55 @@ class BaseScanner<T> {
                   : season.is4kOverride && season.processing
                   ? MediaStatus.PROCESSING
                   : MediaStatus.UNKNOWN,
+              // episodes: season.allEpisodes,
             })
           );
+        }
+
+        const newEpisodes: Episode[] = [];
+
+        for (const episode of season.allEpisodes) {
+          const targetSeason = media?.seasons.find(
+            (s) => s.seasonNumber === season.seasonNumber
+          );
+          const existingEpisode = targetSeason?.episodes?.find(
+            (es) => es.episodeNumber === episode.episodeNumber
+          );
+
+          if (existingEpisode) {
+            existingEpisode.part = (episode.part ?? []).map(
+              (p) => new Part({ file: p.file, size: p.size })
+            );
+          } else {
+            newEpisodes.push(
+              new Episode({
+                episodeNumber: episode.episodeNumber,
+                ratingKey: episode.ratingKey,
+                part: (episode.part ?? []).map(
+                  (p) => new Part({ file: p.file, size: p.size })
+                ),
+              })
+            );
+          }
+        }
+
+        if (existingSeason) {
+          existingSeason.episodes = existingSeason.episodes ?? [];
+          existingSeason.episodes = [
+            ...existingSeason.episodes,
+            ...newEpisodes,
+          ];
+        } else {
+          const lastAddedSeason = newSeasons.find(
+            (s) => s.seasonNumber === season.seasonNumber
+          );
+          if (lastAddedSeason) {
+            lastAddedSeason.episodes = lastAddedSeason.episodes ?? [];
+            lastAddedSeason.episodes = [
+              ...lastAddedSeason.episodes,
+              ...newEpisodes,
+            ];
+          }
         }
       }
 

@@ -66,12 +66,9 @@ const RequestCardError = ({ requestData }: RequestCardErrorProps) => {
   const { hasPermission } = useUser();
   const intl = useIntl();
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: requestData?.media?.mediaUrl,
-    mediaUrl4k: requestData?.media?.mediaUrl4k,
-    iOSPlexUrl: requestData?.media?.iOSPlexUrl,
-    iOSPlexUrl4k: requestData?.media?.iOSPlexUrl4k,
-  });
+  const deepLinks = useDeepLinks(requestData?.media);
+
+  if (!deepLinks) return null;
 
   const deleteRequest = async () => {
     const res = await fetch(`/api/v1/media/${requestData?.media.id}`, {
@@ -168,7 +165,11 @@ const RequestCardError = ({ requestData }: RequestCardErrorProps) => {
                       }
                       is4k={requestData.is4k}
                       mediaType={requestData.type}
-                      plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                      plexUrl={
+                        requestData.is4k
+                          ? deepLinks.mediaUrl4k
+                          : deepLinks.mediaUrl
+                      }
                       serviceUrl={
                         requestData.is4k
                           ? requestData.media.serviceUrl4k
@@ -255,13 +256,6 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
     }
   );
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: requestData?.media?.mediaUrl,
-    mediaUrl4k: requestData?.media?.mediaUrl4k,
-    iOSPlexUrl: requestData?.media?.iOSPlexUrl,
-    iOSPlexUrl4k: requestData?.media?.iOSPlexUrl4k,
-  });
-
   const modifyRequest = async (type: 'approve' | 'decline') => {
     const res = await fetch(`/api/v1/request/${request.id}/${type}`, {
       method: 'POST',
@@ -305,6 +299,8 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
     }
   };
 
+  const deepLinks = useDeepLinks(requestData?.media);
+
   useEffect(() => {
     if (title && onTitleData) {
       onTitleData(request.id, title);
@@ -318,6 +314,8 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
       </div>
     );
   }
+
+  if (!deepLinks) return null;
 
   if (!requestData && !requestError) {
     return <RequestCardError />;
@@ -471,7 +469,9 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                 is4k={requestData.is4k}
                 tmdbId={requestData.media.tmdbId}
                 mediaType={requestData.type}
-                plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                plexUrl={
+                  requestData.is4k ? deepLinks.mediaUrl4k : deepLinks.mediaUrl
+                }
                 serviceUrl={
                   requestData.is4k
                     ? requestData.media.serviceUrl4k

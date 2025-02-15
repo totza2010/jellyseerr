@@ -71,12 +71,9 @@ const RequestItemError = ({
     revalidateList();
   };
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: requestData?.media?.mediaUrl,
-    mediaUrl4k: requestData?.media?.mediaUrl4k,
-    iOSPlexUrl: requestData?.media?.iOSPlexUrl,
-    iOSPlexUrl4k: requestData?.media?.iOSPlexUrl4k,
-  });
+  const deepLinks = useDeepLinks(requestData?.media);
+
+  if (!deepLinks) return null;
 
   return (
     <div className="flex h-64 w-full flex-col justify-center rounded-xl bg-gray-800 py-4 text-gray-400 shadow-md ring-1 ring-red-500 xl:h-28 xl:flex-row">
@@ -154,7 +151,11 @@ const RequestItemError = ({
                     }
                     is4k={requestData.is4k}
                     mediaType={requestData.type}
-                    plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                    plexUrl={
+                      requestData.is4k
+                        ? deepLinks.mediaUrl4k
+                        : deepLinks.mediaUrl
+                    }
                     serviceUrl={
                       requestData.is4k
                         ? requestData.media.serviceUrl4k
@@ -379,12 +380,9 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
     }
   };
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: requestData?.media?.mediaUrl,
-    mediaUrl4k: requestData?.media?.mediaUrl4k,
-    iOSPlexUrl: requestData?.media?.iOSPlexUrl,
-    iOSPlexUrl4k: requestData?.media?.iOSPlexUrl4k,
-  });
+  const deepLinks = useDeepLinks(requestData?.media);
+
+  if (!deepLinks) return null;
 
   if (!title && !error) {
     return (
@@ -544,7 +542,9 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   is4k={requestData.is4k}
                   tmdbId={requestData.media.tmdbId}
                   mediaType={requestData.type}
-                  plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                  plexUrl={
+                    requestData.is4k ? deepLinks.mediaUrl4k : deepLinks.mediaUrl
+                  }
                   serviceUrl={
                     requestData.is4k
                       ? requestData.media.serviceUrl4k

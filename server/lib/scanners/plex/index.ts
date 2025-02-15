@@ -307,18 +307,33 @@ class PlexScanner
             ).length
           : 0;
 
+        const allEpisodes = episodes.map((episode) => ({
+          episodeNumber: episode.index,
+          ratingKey: episode.ratingKey,
+          part: episode.Media.flatMap((media) =>
+            media.Part.map((part) => ({
+              file: part.file,
+              size: part.size,
+            }))
+          ),
+        }));
+
         processableSeasons.push({
           seasonNumber: season.season_number,
+          ratingKey: matchedPlexSeason.ratingKey,
           episodes: totalStandard,
           episodes4k: total4k,
           totalEpisodes: season.episode_count,
+          allEpisodes: allEpisodes ?? [],
         });
       } else {
         processableSeasons.push({
           seasonNumber: season.season_number,
+          ratingKey: '',
           episodes: 0,
           episodes4k: 0,
           totalEpisodes: season.episode_count,
+          allEpisodes: [],
         });
       }
     }

@@ -165,12 +165,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     []
   );
 
-  const { mediaUrl: plexUrl, mediaUrl4k: plexUrl4k } = useDeepLinks({
-    mediaUrl: data?.mediaInfo?.mediaUrl,
-    mediaUrl4k: data?.mediaInfo?.mediaUrl4k,
-    iOSPlexUrl: data?.mediaInfo?.iOSPlexUrl,
-    iOSPlexUrl4k: data?.mediaInfo?.iOSPlexUrl4k,
-  });
+  const deepLinks = useDeepLinks(data?.mediaInfo);
+
+  if (!deepLinks) return null;
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -184,28 +181,28 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
   const mediaLinks: PlayButtonLink[] = [];
 
   if (
-    plexUrl &&
+    deepLinks.mediaUrl &&
     hasPermission([Permission.REQUEST, Permission.REQUEST_MOVIE], {
       type: 'or',
     })
   ) {
     mediaLinks.push({
       text: getAvalaibleMediaServerName(),
-      url: plexUrl,
+      url: deepLinks.mediaUrl,
       svg: <PlayIcon />,
     });
   }
 
   if (
     settings.currentSettings.movie4kEnabled &&
-    plexUrl4k &&
+    deepLinks.mediaUrl4k &&
     hasPermission([Permission.REQUEST_4K, Permission.REQUEST_4K_MOVIE], {
       type: 'or',
     })
   ) {
     mediaLinks.push({
       text: getAvalaible4kMediaServerName(),
-      url: plexUrl4k,
+      url: deepLinks.mediaUrl4k,
       svg: <PlayIcon />,
     });
   }
@@ -524,7 +521,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               inProgress={(data.mediaInfo?.downloadStatus ?? []).length > 0}
               tmdbId={data.mediaInfo?.tmdbId}
               mediaType="movie"
-              plexUrl={plexUrl}
+              plexUrl={deepLinks.mediaUrl}
               serviceUrl={data.mediaInfo?.serviceUrl}
             />
             {settings.currentSettings.movie4kEnabled &&
@@ -548,7 +545,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   }
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="movie"
-                  plexUrl={plexUrl4k}
+                  plexUrl={deepLinks.mediaUrl4k}
                   serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
               )}

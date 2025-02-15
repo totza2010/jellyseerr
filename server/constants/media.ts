@@ -17,4 +17,5 @@ export enum MediaStatus {
   PARTIALLY_AVAILABLE,
   AVAILABLE,
   BLACKLISTED,
+  MISSING,
 }
