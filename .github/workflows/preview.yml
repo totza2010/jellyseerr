@@ -34,4 +34,4 @@ jobs:
           build-args: |
             COMMIT_TAG=${{ github.sha }}
           tags: |
-            fallenbagel/jellyseerr:${{ steps.get_version.outputs.VERSION }}
+            totza2010/jellyseerr:${{ steps.get_version.outputs.VERSION }}
