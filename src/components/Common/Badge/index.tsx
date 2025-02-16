@@ -7,6 +7,7 @@ interface BadgeProps {
     | 'primary'
     | 'danger'
     | 'warning'
+    | 'partially'
     | 'success'
     | 'dark'
     | 'light';

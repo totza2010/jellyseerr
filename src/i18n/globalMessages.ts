@@ -67,6 +67,7 @@ const globalMessages = defineMessages('i18n', {
   addToBlacklist: 'Add to Blacklist',
   removefromBlacklist: 'Remove from Blacklist',
   specials: 'Specials',
+  library: 'Library',
 });
 
 export default globalMessages;

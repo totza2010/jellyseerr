@@ -6208,6 +6208,13 @@ paths:
             type: string
             enum: [added, modified, mediaAdded]
             default: added
+        - in: query
+          name: sortDirection
+          schema:
+            type: string
+            enum: [asc, desc]
+            nullable: true
+            default: desc
       responses:
         '200':
           description: Returned media

@@ -292,9 +292,10 @@ class BaseScanner<T> {
           // Here we update seasons if they already exist.
           // If the season is already marked as available, we
           // force it to stay available (to avoid competing scanners)
+
+          existingSeason.ratingKey = season.ratingKey;
           existingSeason.status =
-            (season.totalEpisodes === season.episodes && season.episodes > 0) ||
-            existingSeason.status === MediaStatus.AVAILABLE
+            season.totalEpisodes === season.episodes && season.episodes > 0
               ? MediaStatus.AVAILABLE
               : season.episodes > 0
               ? MediaStatus.PARTIALLY_AVAILABLE
@@ -304,20 +305,15 @@ class BaseScanner<T> {
 
           // Same thing here, except we only do updates if 4k is enabled
           existingSeason.status4k =
-            (this.enable4kShow &&
-              season.episodes4k === season.totalEpisodes &&
-              season.episodes4k > 0) ||
-            existingSeason.status4k === MediaStatus.AVAILABLE
+            this.enable4kShow &&
+            season.episodes4k === season.totalEpisodes &&
+            season.episodes4k > 0
               ? MediaStatus.AVAILABLE
               : this.enable4kShow && season.episodes4k > 0
               ? MediaStatus.PARTIALLY_AVAILABLE
               : season.is4kOverride && season.processing
               ? MediaStatus.PROCESSING
               : existingSeason.status4k;
-
-          //           existingSeason.episodes = [];
-          // this.log(JSON.stringify(season.allEpisodes));
-          //           existingSeason.episodes = season.allEpisodes ?? [];
         } else {
           newSeasons.push(
             new Season({

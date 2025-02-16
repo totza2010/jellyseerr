@@ -24,6 +24,7 @@ const messages = defineMessages('components.StatusBadge', {
 interface StatusBadgeProps {
   status?: MediaStatus;
   downloadItem?: DownloadingItem[];
+  episode?: string | number;
   is4k?: boolean;
   inProgress?: boolean;
   plexUrl?: string;
@@ -36,6 +37,7 @@ interface StatusBadgeProps {
 const StatusBadge = ({
   status,
   downloadItem = [],
+  episode = '',
   is4k = false,
   inProgress = false,
   plexUrl,
@@ -182,6 +184,8 @@ const StatusBadge = ({
                   {
                     status: inProgress
                       ? intl.formatMessage(globalMessages.processing)
+                      : episode
+                      ? episode
                       : intl.formatMessage(globalMessages.available),
                   }
                 )}
@@ -229,7 +233,7 @@ const StatusBadge = ({
           }}
         >
           <Badge
-            badgeType="success"
+            badgeType={episode ? 'warning' : 'success'}
             href={mediaLink}
             className={`${
               inProgress &&
@@ -248,6 +252,8 @@ const StatusBadge = ({
                   {
                     status: inProgress
                       ? intl.formatMessage(globalMessages.processing)
+                      : episode
+                      ? episode
                       : intl.formatMessage(globalMessages.partiallyavailable),
                   }
                 )}
@@ -367,6 +373,14 @@ const StatusBadge = ({
             {intl.formatMessage(is4k ? messages.status4k : messages.status, {
               status: intl.formatMessage(globalMessages.blacklisted),
             })}
+          </Badge>
+        </Tooltip>
+      );
+    case MediaStatus.MISSING:
+      return (
+        <Tooltip content={mediaLinkDescription}>
+          <Badge badgeType="danger" href={mediaLink}>
+            {episode}
           </Badge>
         </Tooltip>
       );

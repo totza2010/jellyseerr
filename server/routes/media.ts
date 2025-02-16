@@ -51,6 +51,17 @@ mediaRoutes.get('/', async (req, res, next) => {
       statusFilter = undefined;
   }
 
+  // let sortFilter: string;
+  let sortDirection: 'ASC' | 'DESC';
+
+  switch (req.query.sortDirection) {
+    case 'asc':
+      sortDirection = 'ASC';
+      break;
+    default:
+      sortDirection = 'DESC';
+  }
+
   let sortFilter: FindOneOptions<Media>['order'] = {
     id: 'DESC',
   };
@@ -58,12 +69,12 @@ mediaRoutes.get('/', async (req, res, next) => {
   switch (req.query.sort) {
     case 'modified':
       sortFilter = {
-        updatedAt: 'DESC',
+        updatedAt: sortDirection,
       };
       break;
     case 'mediaAdded':
       sortFilter = {
-        mediaAddedAt: 'DESC',
+        mediaAddedAt: sortDirection,
       };
   }
 
