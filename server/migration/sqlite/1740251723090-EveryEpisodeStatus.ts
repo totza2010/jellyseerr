@@ -1,14 +1,11 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AvailebleEpisodes1739722141440 implements MigrationInterface {
-  name = 'AvailebleEpisodes1739722141440';
+export class EveryEpisodeStatus1740251723090 implements MigrationInterface {
+  name = 'EveryEpisodeStatus1740251723090';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "part" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "file" text, "size" integer NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "episodeId" integer)`
-    );
-    await queryRunner.query(
-      `CREATE TABLE "episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer)`
+      `CREATE TABLE "episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "status" integer NOT NULL DEFAULT (1), "status4k" integer NOT NULL DEFAULT (1), "part" text, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer)`
     );
     await queryRunner.query(
       `CREATE TABLE "temporary_season" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "seasonNumber" integer NOT NULL, "status" integer NOT NULL DEFAULT (1), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "mediaId" integer, "status4k" integer NOT NULL DEFAULT (1), "ratingKey" varchar, CONSTRAINT "FK_087099b39600be695591da9a49c" FOREIGN KEY ("mediaId") REFERENCES "media" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`
@@ -97,18 +94,10 @@ export class AvailebleEpisodes1739722141440 implements MigrationInterface {
       `CREATE INDEX "IDX_6bbafa28411e6046421991ea21" ON "blacklist" ("tmdbId") `
     );
     await queryRunner.query(
-      `CREATE TABLE "temporary_part" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "file" text, "size" integer NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "episodeId" integer, CONSTRAINT "FK_c6c6ec487bb6f480b4315709e46" FOREIGN KEY ("episodeId") REFERENCES "episode" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`
+      `CREATE TABLE "temporary_episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "status" integer NOT NULL DEFAULT (1), "status4k" integer NOT NULL DEFAULT (1), "part" text, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer, CONSTRAINT "FK_e73d28c1e5e3c85125163f7c9cd" FOREIGN KEY ("seasonId") REFERENCES "season" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`
     );
     await queryRunner.query(
-      `INSERT INTO "temporary_part"("id", "file", "size", "createdAt", "updatedAt", "episodeId") SELECT "id", "file", "size", "createdAt", "updatedAt", "episodeId" FROM "part"`
-    );
-    await queryRunner.query(`DROP TABLE "part"`);
-    await queryRunner.query(`ALTER TABLE "temporary_part" RENAME TO "part"`);
-    await queryRunner.query(
-      `CREATE TABLE "temporary_episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer, CONSTRAINT "FK_e73d28c1e5e3c85125163f7c9cd" FOREIGN KEY ("seasonId") REFERENCES "season" ("id") ON DELETE CASCADE ON UPDATE NO ACTION)`
-    );
-    await queryRunner.query(
-      `INSERT INTO "temporary_episode"("id", "episodeNumber", "ratingKey", "createdAt", "updatedAt", "seasonId") SELECT "id", "episodeNumber", "ratingKey", "createdAt", "updatedAt", "seasonId" FROM "episode"`
+      `INSERT INTO "temporary_episode"("id", "episodeNumber", "ratingKey", "status", "status4k", "part", "createdAt", "updatedAt", "seasonId") SELECT "id", "episodeNumber", "ratingKey", "status", "status4k", "part", "createdAt", "updatedAt", "seasonId" FROM "episode"`
     );
     await queryRunner.query(`DROP TABLE "episode"`);
     await queryRunner.query(
@@ -121,20 +110,12 @@ export class AvailebleEpisodes1739722141440 implements MigrationInterface {
       `ALTER TABLE "episode" RENAME TO "temporary_episode"`
     );
     await queryRunner.query(
-      `CREATE TABLE "episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer)`
+      `CREATE TABLE "episode" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "episodeNumber" integer NOT NULL, "ratingKey" varchar, "status" integer NOT NULL DEFAULT (1), "status4k" integer NOT NULL DEFAULT (1), "part" text, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "seasonId" integer)`
     );
     await queryRunner.query(
-      `INSERT INTO "episode"("id", "episodeNumber", "ratingKey", "createdAt", "updatedAt", "seasonId") SELECT "id", "episodeNumber", "ratingKey", "createdAt", "updatedAt", "seasonId" FROM "temporary_episode"`
+      `INSERT INTO "episode"("id", "episodeNumber", "ratingKey", "status", "status4k", "part", "createdAt", "updatedAt", "seasonId") SELECT "id", "episodeNumber", "ratingKey", "status", "status4k", "part", "createdAt", "updatedAt", "seasonId" FROM "temporary_episode"`
     );
     await queryRunner.query(`DROP TABLE "temporary_episode"`);
-    await queryRunner.query(`ALTER TABLE "part" RENAME TO "temporary_part"`);
-    await queryRunner.query(
-      `CREATE TABLE "part" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "file" text, "size" integer NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')), "updatedAt" datetime NOT NULL DEFAULT (datetime('now')), "episodeId" integer)`
-    );
-    await queryRunner.query(
-      `INSERT INTO "part"("id", "file", "size", "createdAt", "updatedAt", "episodeId") SELECT "id", "file", "size", "createdAt", "updatedAt", "episodeId" FROM "temporary_part"`
-    );
-    await queryRunner.query(`DROP TABLE "temporary_part"`);
     await queryRunner.query(`DROP INDEX "IDX_6bbafa28411e6046421991ea21"`);
     await queryRunner.query(
       `ALTER TABLE "blacklist" RENAME TO "temporary_blacklist"`
@@ -222,6 +203,5 @@ export class AvailebleEpisodes1739722141440 implements MigrationInterface {
     );
     await queryRunner.query(`DROP TABLE "temporary_season"`);
     await queryRunner.query(`DROP TABLE "episode"`);
-    await queryRunner.query(`DROP TABLE "part"`);
   }
 }

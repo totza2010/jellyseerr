@@ -289,6 +289,74 @@ const StatusBadge = ({
         </Tooltip>
       );
 
+    case MediaStatus.MIXED_AVAILABILITY:
+      return (
+        <Tooltip
+          content={inProgress ? tooltipContent : mediaLinkDescription}
+          className={`${
+            inProgress && 'hidden max-h-96 w-96 overflow-y-auto sm:block'
+          }`}
+          tooltipConfig={{
+            ...(inProgress && { interactive: true, delayHide: 100 }),
+          }}
+        >
+          <Badge
+            badgeType="mixed"
+            href={mediaLink}
+            className={`${
+              inProgress &&
+              'relative !bg-gray-700 !bg-opacity-80 !px-0 hover:!bg-gray-700'
+            } overflow-hidden`}
+          >
+            {inProgress && badgeDownloadProgress}
+            <div
+              className={`relative z-20 flex items-center ${
+                inProgress && 'px-2'
+              }`}
+            >
+              <span>
+                {intl.formatMessage(
+                  is4k ? messages.status4k : messages.status,
+                  {
+                    status: inProgress
+                      ? intl.formatMessage(globalMessages.processing)
+                      : episode
+                      ? episode
+                      : intl.formatMessage(globalMessages.mixedavailability),
+                  }
+                )}
+              </span>
+              {inProgress && (
+                <>
+                  {mediaType === 'tv' &&
+                    downloadItem[0].episode &&
+                    (downloadItem.length > 1 &&
+                    downloadItem.every(
+                      (item) =>
+                        item.downloadId &&
+                        item.downloadId === downloadItem[0].downloadId
+                    ) ? (
+                      <span className="ml-1">
+                        {intl.formatMessage(messages.seasonnumber, {
+                          seasonNumber: downloadItem[0].episode.seasonNumber,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="ml-1">
+                        {intl.formatMessage(messages.seasonepisodenumber, {
+                          seasonNumber: downloadItem[0].episode.seasonNumber,
+                          episodeNumber: downloadItem[0].episode.episodeNumber,
+                        })}
+                      </span>
+                    ))}
+                  <Spinner className="ml-1 h-3 w-3" />
+                </>
+              )}
+            </div>
+          </Badge>
+        </Tooltip>
+      );
+
     case MediaStatus.PROCESSING:
       return (
         <Tooltip
@@ -380,6 +448,14 @@ const StatusBadge = ({
       return (
         <Tooltip content={mediaLinkDescription}>
           <Badge badgeType="danger" href={mediaLink}>
+            {episode}
+          </Badge>
+        </Tooltip>
+      );
+    case MediaStatus.UNKNOWN:
+      return (
+        <Tooltip content={mediaLinkDescription}>
+          <Badge badgeType="primary" href={mediaLink}>
             {episode}
           </Badge>
         </Tooltip>

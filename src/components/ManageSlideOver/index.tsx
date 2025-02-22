@@ -197,6 +197,57 @@ const ManageSlideOver = ({
     );
   };
 
+  const firstSeasonFile = data.mediaInfo?.seasons
+    ?.flatMap((season) => season.episodes ?? []) // รวมทุกตอนจากทุกซีซัน
+    ?.find((episode) => episode.part && episode.part !== '[]')?.part;
+
+  const parsedMainFiles = firstSeasonFile ? JSON.parse(firstSeasonFile) : [];
+
+  const tautulliUrls =
+    data.mediaInfo?.tautulliUrl?.split(/\s*,\s*/).map((url) => {
+      const urlMatch = url.match(/rating_key=(\d+)/);
+      const urlRatingKey = urlMatch ? urlMatch[1] : '';
+
+      // หาไฟล์ที่มี ratingKey ตรงกัน
+      const matchingFile = parsedMainFiles.find((file: { key: string }) =>
+        file.key.split(/\s*,\s*/).includes(urlRatingKey)
+      );
+
+      const selectedFile = matchingFile?.file || '';
+
+      // หา edition, audio, sub
+      const editionMatch = [...selectedFile.matchAll(/\[(edition-[^\]]+)]/g)];
+      const editionText =
+        editionMatch.length > 0
+          ? editionMatch[editionMatch.length - 1][1].replace('edition-', '')
+          : null;
+
+      const audioMatch = [...selectedFile.matchAll(/\[Audio-([^\]]+)]/g)];
+      const audioText =
+        audioMatch.length > 0
+          ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
+          : null;
+
+      const subMatch = [...selectedFile.matchAll(/\[Sub-([^\]]+)]/g)];
+      const subText =
+        subMatch.length > 0
+          ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
+          : null;
+
+      // sort by: edition > (Audio + Sub)
+      let extractedText = editionText || null;
+      if (!extractedText) {
+        extractedText =
+          [audioText, subText].filter(Boolean).join(' / ') || 'Unknown';
+      }
+
+      return {
+        url,
+        text: matchingFile?.library || 'Unknown Library',
+        tooltip: extractedText,
+      };
+    }) || [];
+
   return (
     <SlideOver
       show={show}
@@ -384,25 +435,28 @@ const ManageSlideOver = ({
                         )}
                       </div>
                     )}
-                    {data.mediaInfo?.tautulliUrl && (
-                      <a
-                        href={data.mediaInfo.tautulliUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Button
-                          buttonType="ghost"
-                          className={`w-full ${
-                            watchData?.data ? 'rounded-t-none' : ''
-                          }`}
-                        >
-                          <Bars4Icon />
-                          <span>
-                            {intl.formatMessage(messages.opentautulli)}
-                          </span>
-                        </Button>
-                      </a>
-                    )}
+                    {tautulliUrls.length > 0 &&
+                      tautulliUrls.map(({ url, text, tooltip }, index) => (
+                        <Tooltip key={url} content={tooltip}>
+                          <a href={url} target="_blank" rel="noreferrer">
+                            <Button
+                              buttonType="ghost"
+                              className={`w-full ${
+                                index === tautulliUrls.length - 1
+                                  ? 'rounded-t-none'
+                                  : 'rounded-t-none rounded-b-none'
+                              }`}
+                              title={tooltip}
+                            >
+                              <Bars4Icon />
+                              <span>
+                                {intl.formatMessage(messages.opentautulli)}{' '}
+                                {text}
+                              </span>
+                            </Button>
+                          </a>
+                        </Tooltip>
+                      ))}
                   </div>
                 )}
                 {data.mediaInfo?.serviceUrl && (

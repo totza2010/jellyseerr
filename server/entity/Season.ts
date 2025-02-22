@@ -3,6 +3,7 @@ import { MediaServerType } from '@server/constants/server';
 import { getSettings } from '@server/lib/settings';
 import {
   AfterLoad,
+  AfterUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -63,21 +64,40 @@ class Season {
     const { machineId, webAppUrl } = getSettings().plex;
     const { externalUrl: tautulliUrl } = getSettings().tautulli;
 
-    if (getSettings().main.mediaServerType == MediaServerType.PLEX) {
+    if (getSettings().main.mediaServerType === MediaServerType.PLEX) {
       if (this.ratingKey) {
-        this.mediaUrl = `${
-          webAppUrl ? webAppUrl : 'https://app.plex.tv/desktop'
-        }#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${
-          this.ratingKey
-        }`;
+        const ratingKeys = this.ratingKey
+          .split(/\s*,\s*/)
+          .map((key) => key.trim());
 
-        this.iOSPlexUrl = `plex://preplay/?metadataKey=%2Flibrary%2Fmetadata%2F${this.ratingKey}&server=${machineId}`;
+        this.mediaUrl = ratingKeys
+          .map(
+            (key) =>
+              `${
+                webAppUrl ? webAppUrl : 'https://app.plex.tv/desktop'
+              }#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${key}`
+          )
+          .join(', ');
+
+        this.iOSPlexUrl = ratingKeys
+          .map(
+            (key) =>
+              `plex://preplay/?metadataKey=%2Flibrary%2Fmetadata%2F${key}&server=${machineId}`
+          )
+          .join(', ');
 
         if (tautulliUrl) {
-          this.tautulliUrl = `${tautulliUrl}/info?rating_key=${this.ratingKey}`;
+          this.tautulliUrl = ratingKeys
+            .map((key) => `${tautulliUrl}/info?rating_key=${key}`)
+            .join(', ');
         }
       }
     }
+  }
+
+  @AfterUpdate()
+  public updatePlexUrls(): void {
+    this.setPlexUrls();
   }
 }
 

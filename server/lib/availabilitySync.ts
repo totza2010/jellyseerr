@@ -874,8 +874,8 @@ class AvailabilitySync {
     media: Media,
     is4k: boolean
   ): Promise<{ existsInPlex: boolean; seasonsMap?: Map<number, boolean> }> {
-    const ratingKey = media.ratingKey;
-    const ratingKey4k = media.ratingKey4k;
+    const ratingKey = media.ratingKey?.split(/\s*,\s*/)[0] ?? '';
+    const ratingKey4k = media.ratingKey4k?.split(/\s*,\s*/)[0] ?? '';
     let existsInPlex = false;
     let preventSeasonSearch = false;
 
@@ -960,8 +960,8 @@ class AvailabilitySync {
     season: Season,
     is4k: boolean
   ): Promise<boolean> {
-    const ratingKey = media.ratingKey;
-    const ratingKey4k = media.ratingKey4k;
+    const ratingKey = media.ratingKey?.split(/\s*,\s*/)[0] ?? '';
+    const ratingKey4k = media.ratingKey4k?.split(/\s*,\s*/)[0] ?? '';
     let seasonExistsInPlex = false;
 
     // Check each plex instance to see if the season exists

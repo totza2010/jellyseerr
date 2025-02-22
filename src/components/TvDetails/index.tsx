@@ -9,6 +9,8 @@ import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import type { OpenButtonLink } from '@app/components/Common/OpenButton';
+import OpenButton from '@app/components/Common/OpenButton';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { PlayButtonLink } from '@app/components/Common/PlayButton';
 import PlayButton from '@app/components/Common/PlayButton';
@@ -45,7 +47,7 @@ import {
   PlayIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
-import { ChevronDownIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, FolderOpenIcon } from '@heroicons/react/24/solid';
 import type { RTRating } from '@server/api/rating/rottentomatoes';
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import { IssueStatus } from '@server/constants/issue';
@@ -82,6 +84,7 @@ const messages = defineMessages('components.TvDetails', {
   network: '{networkCount, plural, one {Network} other {Networks}}',
   viewfullcrew: 'View Full Crew',
   play: 'Play on {mediaServerName}',
+  open: 'Open on {mediaServerName}',
   play4k: 'Play 4K on {mediaServerName}',
   seasons: '{seasonCount, plural, one {# Season} other {# Seasons}}',
   episodeRuntime: 'Episode Runtime',
@@ -319,16 +322,22 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       (provider) => provider.iso_3166_1 === streamingRegion
     )?.flatrate ?? [];
 
-  function getAvalaibleMediaServerName() {
+  function getAvalaibleMediaServerName(library = '') {
     if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Emby' });
+      return intl.formatMessage(library ? messages.open : messages.play, {
+        mediaServerName: library ?? 'Emby',
+      });
     }
 
     if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Plex' });
+      return intl.formatMessage(library ? messages.open : messages.play, {
+        mediaServerName: library ?? 'Plex',
+      });
     }
 
-    return intl.formatMessage(messages.play, { mediaServerName: 'Jellyfin' });
+    return intl.formatMessage(library ? messages.open : messages.play, {
+      mediaServerName: library ?? 'Jellyfin',
+    });
   }
 
   function getAvalaible4kMediaServerName() {
@@ -472,6 +481,68 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   const showHideButton = hasPermission([Permission.MANAGE_BLACKLIST], {
     type: 'or',
   });
+
+  const firstSeasonFile = data.mediaInfo?.seasons
+    ?.flatMap((season) => season.episodes ?? []) // รวมทุกตอนจากทุกซีซัน
+    ?.find((episode) => episode.part && episode.part !== '[]')?.part;
+
+  const parsedMainFiles = firstSeasonFile ? JSON.parse(firstSeasonFile) : [];
+
+  const mediaLinksOpen: OpenButtonLink[] = [];
+
+  if (deepLinks?.mediaUrl) {
+    const mediaUrls = deepLinks.mediaUrl
+      .split(/\s*,\s*/)
+      .map((url) => url.trim());
+
+    mediaUrls.forEach((url) => {
+      // ดึง ratingKey จาก mediaUrl
+      const urlMatch = url.match(/metadata%2F(\d+)/);
+      const urlRatingKey = urlMatch ? urlMatch[1] : '';
+
+      // หาไฟล์ที่มี ratingKey ตรงกัน
+      const matchingFile = parsedMainFiles.find((file: { key: string }) =>
+        file.key.split(/\s*,\s*/).includes(urlRatingKey)
+      );
+
+      const selectedFile = matchingFile?.file || '';
+
+      // Find [edition-*]
+      const editionMatch = [...selectedFile.matchAll(/\[(edition-[^\]]+)]/g)];
+      const editionText =
+        editionMatch.length > 0
+          ? editionMatch[editionMatch.length - 1][1].replace('edition-', '')
+          : null;
+
+      // Find [Audio-*] and [Sub-*]
+      const audioMatch = [...selectedFile.matchAll(/\[Audio-([^\]]+)]/g)];
+      const audioText =
+        audioMatch.length > 0
+          ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
+          : null;
+
+      const subMatch = [...selectedFile.matchAll(/\[Sub-([^\]]+)]/g)];
+      const subText =
+        subMatch.length > 0
+          ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
+          : null;
+
+      // sort by: edition > (Audio + Sub)
+      let extractedText = editionText || null;
+
+      if (!extractedText) {
+        extractedText =
+          [audioText, subText].filter(Boolean).join(' / ') || 'Unknown';
+      }
+
+      mediaLinksOpen.push({
+        text: getAvalaibleMediaServerName(matchingFile?.library),
+        tooltip: extractedText,
+        url: url,
+        svg: <FolderOpenIcon />,
+      });
+    });
+  }
 
   return (
     <div
@@ -670,6 +741,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
             </>
           )}
           <PlayButton links={mediaLinks} />
+          <OpenButton links={mediaLinksOpen} className="ml-2" />
           <RequestButton
             mediaType="tv"
             onUpdate={() => revalidate()}
@@ -844,202 +916,310 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 const seasonLinks = deepLinks.seasons.find(
                   (s) => s.seasonNumber === season.seasonNumber
                 );
+                const seasonData = data.mediaInfo?.seasons?.find(
+                  (e) => e.seasonNumber === season.seasonNumber
+                );
+                const seasonFile = seasonData?.episodes?.find(
+                  (episode) => episode.part && episode.part !== '[]'
+                )?.part;
 
-                const mediaSeasonLinks: PlayButtonLink[] = [];
+                const parsedFiles = seasonFile ? JSON.parse(seasonFile) : [];
 
-                if (
-                  seasonLinks?.mediaUrl &&
-                  hasPermission([Permission.REQUEST, Permission.REQUEST_TV], {
-                    type: 'or',
-                  })
-                ) {
-                  if (seasonLinks && seasonLinks.mediaUrl) {
+                const mediaSeasonLinks: OpenButtonLink[] = [];
+
+                if (seasonLinks?.mediaUrl) {
+                  const mediaUrls = seasonLinks.mediaUrl
+                    .split(/\s*,\s*/)
+                    .map((url) => url.trim());
+
+                  mediaUrls.forEach((url) => {
+                    // ดึง ratingKey จาก mediaUrl
+                    const urlMatch = url.match(/metadata%2F(\d+)/);
+                    const urlRatingKey = urlMatch ? urlMatch[1] : '';
+
+                    // หาไฟล์ที่มี ratingKey ตรงกัน
+                    const matchingFile = parsedFiles.find(
+                      (file: { key: string }) =>
+                        file.key.split(/\s*,\s*/).includes(urlRatingKey)
+                    );
+
+                    const selectedFile = matchingFile?.file || '';
+
+                    // Find [edition-*]
+                    const editionMatch = [
+                      ...selectedFile.matchAll(/\[(edition-[^\]]+)]/g),
+                    ];
+                    const editionText =
+                      editionMatch.length > 0
+                        ? editionMatch[editionMatch.length - 1][1].replace(
+                            'edition-',
+                            ''
+                          )
+                        : null;
+
+                    // Find [Audio-*] and [Sub-*]
+                    const audioMatch = [
+                      ...selectedFile.matchAll(/\[Audio-([^\]]+)]/g),
+                    ];
+                    const audioText =
+                      audioMatch.length > 0
+                        ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
+                        : null;
+
+                    const subMatch = [
+                      ...selectedFile.matchAll(/\[Sub-([^\]]+)]/g),
+                    ];
+                    const subText =
+                      subMatch.length > 0
+                        ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
+                        : null;
+
+                    // sort by: edition > (Audio + Sub)
+                    let extractedText = editionText || null;
+
+                    if (!extractedText) {
+                      extractedText =
+                        [audioText, subText].filter(Boolean).join(' / ') ||
+                        'Unknown';
+                    }
+
                     mediaSeasonLinks.push({
-                      text: getAvalaibleMediaServerName(),
-                      url: seasonLinks.mediaUrl,
-                      svg: <PlayIcon />,
+                      text: getAvalaibleMediaServerName(matchingFile.library),
+                      tooltip: extractedText,
+                      url: url,
+                      svg: <FolderOpenIcon />,
                     });
-                  }
+                  });
                 }
+
                 return (
                   <Disclosure key={`season-discoslure-${season.seasonNumber}`}>
                     {({ open }) => (
                       <>
-                        <Disclosure.Button
-                          className={`mt-2 flex w-full items-center justify-between space-x-2 border-gray-700 bg-gray-800 px-4 py-2 text-gray-200 ${
-                            open
-                              ? 'rounded-t-md border-t border-l border-r'
-                              : 'rounded-md border'
-                          }`}
+                        <div
+                          className={`mt-2 flex w-full items-center justify-between space-x-2 border-gray-700 bg-gray-800 px-4 py-2 text-gray-200
+                        ${
+                          open
+                            ? 'rounded-t-md border-t border-l border-r'
+                            : 'rounded-md border'
+                        }`}
                         >
-                          <div className="flex flex-1 items-center space-x-2 text-lg">
-                            <span>
-                              {season.seasonNumber === 0
-                                ? intl.formatMessage(globalMessages.specials)
-                                : intl.formatMessage(messages.seasonnumber, {
-                                    seasonNumber: season.seasonNumber,
-                                  })}
-                            </span>
-                            <Badge badgeType="dark">
-                              {intl.formatMessage(messages.episodeCount, {
-                                episodeCount: season.episodeCount,
-                              })}
-                            </Badge>
-                            <PlayButton links={mediaSeasonLinks} />
-                          </div>
-                          {((!mSeason &&
-                            request?.status === MediaRequestStatus.APPROVED) ||
-                            mSeason?.status === MediaStatus.PROCESSING) && (
-                            <>
-                              <div className="hidden md:flex">
-                                <Badge badgeType="primary">
-                                  {intl.formatMessage(globalMessages.requested)}
-                                </Badge>
-                              </div>
-                              <div className="flex md:hidden">
-                                <StatusBadgeMini
-                                  status={MediaStatus.PROCESSING}
-                                />
-                              </div>
-                            </>
-                          )}
-                          {((!mSeason &&
-                            request?.status === MediaRequestStatus.PENDING) ||
-                            mSeason?.status === MediaStatus.PENDING) && (
-                            <>
-                              <div className="hidden md:flex">
-                                <Badge badgeType="warning">
-                                  {intl.formatMessage(globalMessages.pending)}
-                                </Badge>
-                              </div>
-                              <div className="flex md:hidden">
-                                <StatusBadgeMini status={MediaStatus.PENDING} />
-                              </div>
-                            </>
-                          )}
-                          {mSeason?.status ===
-                            MediaStatus.PARTIALLY_AVAILABLE && (
-                            <>
-                              <div className="hidden md:flex">
-                                <Badge badgeType="success">
-                                  {intl.formatMessage(
-                                    globalMessages.partiallyavailable
-                                  )}
-                                </Badge>
-                              </div>
-                              <div className="flex md:hidden">
-                                <StatusBadgeMini
-                                  status={MediaStatus.PARTIALLY_AVAILABLE}
-                                />
-                              </div>
-                            </>
-                          )}
-                          {mSeason?.status === MediaStatus.AVAILABLE && (
-                            <>
-                              <div className="hidden md:flex">
-                                <Badge badgeType="success">
-                                  {intl.formatMessage(globalMessages.available)}
-                                </Badge>
-                              </div>
-                              <div className="flex md:hidden">
-                                <StatusBadgeMini
-                                  status={MediaStatus.AVAILABLE}
-                                />
-                              </div>
-                            </>
-                          )}
-                          {((!mSeason4k &&
-                            request4k?.status ===
-                              MediaRequestStatus.APPROVED) ||
-                            mSeason4k?.status4k === MediaStatus.PROCESSING) &&
-                            show4k && (
+                          <Disclosure.Button className="flex flex-1 items-center space-x-2 text-lg">
+                            <div className="flex flex-1 items-center space-x-2 text-lg">
+                              <span>
+                                {season.seasonNumber === 0
+                                  ? intl.formatMessage(globalMessages.specials)
+                                  : intl.formatMessage(messages.seasonnumber, {
+                                      seasonNumber: season.seasonNumber,
+                                    })}
+                              </span>
+                              <Badge badgeType="dark">
+                                {intl.formatMessage(messages.episodeCount, {
+                                  episodeCount: season.episodeCount,
+                                })}
+                              </Badge>
+                            </div>
+                            {((!mSeason &&
+                              request?.status ===
+                                MediaRequestStatus.APPROVED) ||
+                              mSeason?.status === MediaStatus.PROCESSING) && (
                               <>
                                 <div className="hidden md:flex">
                                   <Badge badgeType="primary">
-                                    {intl.formatMessage(messages.status4k, {
-                                      status: intl.formatMessage(
-                                        globalMessages.requested
-                                      ),
-                                    })}
+                                    {intl.formatMessage(
+                                      globalMessages.requested
+                                    )}
                                   </Badge>
                                 </div>
                                 <div className="flex md:hidden">
                                   <StatusBadgeMini
                                     status={MediaStatus.PROCESSING}
-                                    is4k={true}
                                   />
                                 </div>
                               </>
                             )}
-                          {((!mSeason4k &&
-                            request4k?.status === MediaRequestStatus.PENDING) ||
-                            mSeason?.status4k === MediaStatus.PENDING) &&
-                            show4k && (
+                            {((!mSeason &&
+                              request?.status === MediaRequestStatus.PENDING) ||
+                              mSeason?.status === MediaStatus.PENDING) && (
                               <>
                                 <div className="hidden md:flex">
                                   <Badge badgeType="warning">
-                                    {intl.formatMessage(messages.status4k, {
-                                      status: intl.formatMessage(
-                                        globalMessages.pending
-                                      ),
-                                    })}
+                                    {intl.formatMessage(globalMessages.pending)}
                                   </Badge>
                                 </div>
                                 <div className="flex md:hidden">
                                   <StatusBadgeMini
                                     status={MediaStatus.PENDING}
-                                    is4k={true}
                                   />
                                 </div>
                               </>
                             )}
-                          {mSeason4k?.status4k ===
-                            MediaStatus.PARTIALLY_AVAILABLE &&
-                            show4k && (
+                            {mSeason?.status ===
+                              MediaStatus.PARTIALLY_AVAILABLE && (
                               <>
                                 <div className="hidden md:flex">
                                   <Badge badgeType="success">
-                                    {intl.formatMessage(messages.status4k, {
-                                      status: intl.formatMessage(
-                                        globalMessages.partiallyavailable
-                                      ),
-                                    })}
+                                    {intl.formatMessage(
+                                      globalMessages.partiallyavailable
+                                    )}
                                   </Badge>
                                 </div>
                                 <div className="flex md:hidden">
                                   <StatusBadgeMini
                                     status={MediaStatus.PARTIALLY_AVAILABLE}
-                                    is4k={true}
                                   />
                                 </div>
                               </>
                             )}
-                          {mSeason4k?.status4k === MediaStatus.AVAILABLE &&
-                            show4k && (
+                            {mSeason?.status === MediaStatus.AVAILABLE && (
                               <>
                                 <div className="hidden md:flex">
                                   <Badge badgeType="success">
-                                    {intl.formatMessage(messages.status4k, {
-                                      status: intl.formatMessage(
-                                        globalMessages.available
-                                      ),
-                                    })}
+                                    {intl.formatMessage(
+                                      globalMessages.available
+                                    )}
                                   </Badge>
                                 </div>
                                 <div className="flex md:hidden">
                                   <StatusBadgeMini
                                     status={MediaStatus.AVAILABLE}
-                                    is4k={true}
                                   />
                                 </div>
                               </>
                             )}
-                          <ChevronDownIcon
-                            className={`${
-                              open ? 'rotate-180' : ''
-                            } h-6 w-6 text-gray-500`}
-                          />
-                        </Disclosure.Button>
+                            {mSeason?.status ===
+                              MediaStatus.MIXED_AVAILABILITY && (
+                              <>
+                                <div className="hidden md:flex">
+                                  <Badge badgeType="mixed">
+                                    {intl.formatMessage(
+                                      globalMessages.mixedavailability
+                                    )}
+                                  </Badge>
+                                </div>
+                                <div className="flex md:hidden">
+                                  <StatusBadgeMini
+                                    status={MediaStatus.MIXED_AVAILABILITY}
+                                  />
+                                </div>
+                              </>
+                            )}
+                            {((!mSeason4k &&
+                              request4k?.status ===
+                                MediaRequestStatus.APPROVED) ||
+                              mSeason4k?.status4k === MediaStatus.PROCESSING) &&
+                              show4k && (
+                                <>
+                                  <div className="hidden md:flex">
+                                    <Badge badgeType="primary">
+                                      {intl.formatMessage(messages.status4k, {
+                                        status: intl.formatMessage(
+                                          globalMessages.requested
+                                        ),
+                                      })}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex md:hidden">
+                                    <StatusBadgeMini
+                                      status={MediaStatus.PROCESSING}
+                                      is4k={true}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            {((!mSeason4k &&
+                              request4k?.status ===
+                                MediaRequestStatus.PENDING) ||
+                              mSeason?.status4k === MediaStatus.PENDING) &&
+                              show4k && (
+                                <>
+                                  <div className="hidden md:flex">
+                                    <Badge badgeType="warning">
+                                      {intl.formatMessage(messages.status4k, {
+                                        status: intl.formatMessage(
+                                          globalMessages.pending
+                                        ),
+                                      })}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex md:hidden">
+                                    <StatusBadgeMini
+                                      status={MediaStatus.PENDING}
+                                      is4k={true}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            {mSeason4k?.status4k ===
+                              MediaStatus.PARTIALLY_AVAILABLE &&
+                              show4k && (
+                                <>
+                                  <div className="hidden md:flex">
+                                    <Badge badgeType="success">
+                                      {intl.formatMessage(messages.status4k, {
+                                        status: intl.formatMessage(
+                                          globalMessages.partiallyavailable
+                                        ),
+                                      })}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex md:hidden">
+                                    <StatusBadgeMini
+                                      status={MediaStatus.PARTIALLY_AVAILABLE}
+                                      is4k={true}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            {mSeason4k?.status4k === MediaStatus.AVAILABLE &&
+                              show4k && (
+                                <>
+                                  <div className="hidden md:flex">
+                                    <Badge badgeType="success">
+                                      {intl.formatMessage(messages.status4k, {
+                                        status: intl.formatMessage(
+                                          globalMessages.available
+                                        ),
+                                      })}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex md:hidden">
+                                    <StatusBadgeMini
+                                      status={MediaStatus.AVAILABLE}
+                                      is4k={true}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            {mSeason4k?.status4k ===
+                              MediaStatus.MIXED_AVAILABILITY &&
+                              show4k && (
+                                <>
+                                  <div className="hidden md:flex">
+                                    <Badge badgeType="mixed">
+                                      {intl.formatMessage(messages.status4k, {
+                                        status: intl.formatMessage(
+                                          globalMessages.mixedavailability
+                                        ),
+                                      })}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex md:hidden">
+                                    <StatusBadgeMini
+                                      status={MediaStatus.MIXED_AVAILABILITY}
+                                      is4k={true}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                            <ChevronDownIcon
+                              className={`${
+                                open ? 'rotate-180' : ''
+                              } h-6 w-6 text-gray-500`}
+                            />
+                          </Disclosure.Button>
+                          <OpenButton links={mediaSeasonLinks} />
+                        </div>
                         <Transition
                           show={open}
                           enter="transition-opacity duration-100 ease-out"
@@ -1270,7 +1450,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 <span className="media-fact-value flex flex-row flex-wrap gap-5">
                   {streamingProviders.map((p) => {
                     return (
-                      <Tooltip content={p.name}>
+                      <Tooltip content={p.name} key={`tooltip-item-${p.id}`}>
                         <span
                           className="opacity-50 transition duration-300 hover:opacity-100"
                           key={`provider-${p.id}`}

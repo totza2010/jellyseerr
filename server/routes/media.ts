@@ -39,6 +39,7 @@ mediaRoutes.get('/', async (req, res, next) => {
       statusFilter = In([
         MediaStatus.AVAILABLE,
         MediaStatus.PARTIALLY_AVAILABLE,
+        MediaStatus.MIXED_AVAILABILITY,
       ]);
       break;
     case 'processing':
@@ -46,6 +47,9 @@ mediaRoutes.get('/', async (req, res, next) => {
       break;
     case 'pending':
       statusFilter = MediaStatus.PENDING;
+      break;
+    case 'mixed':
+      statusFilter = MediaStatus.MIXED_AVAILABILITY;
       break;
     default:
       statusFilter = undefined;
@@ -304,62 +308,82 @@ mediaRoutes.get<{ id: string }, MediaWatchDataResponse>(
       const response: MediaWatchDataResponse = {};
 
       if (media.ratingKey) {
-        const watchStats = await tautulli.getMediaWatchStats(media.ratingKey);
-        const watchUsers = await tautulli.getMediaWatchUsers(media.ratingKey);
+        const ratingKeys = media.ratingKey.split(/\s*,\s*/); // รองรับ "1234, 5678"
 
-        const users = await userRepository
-          .createQueryBuilder('user')
-          .where('user.plexId IN (:...plexIds)', {
-            plexIds: watchUsers.map((u) => u.user_id),
-          })
-          .getMany();
+        // ดึงข้อมูลจาก Tautulli สำหรับทุก key
+        const watchStatsArray = await Promise.all(
+          ratingKeys.map((key) => tautulli.getMediaWatchStats(key))
+        );
+        const watchUsersArray = await Promise.all(
+          ratingKeys.map((key) => tautulli.getMediaWatchUsers(key))
+        );
 
-        const playCount =
-          watchStats.find((i) => i.query_days == 0)?.total_plays ?? 0;
+        // รวมค่าที่ได้จากทุก ratingKey
+        const watchStats = watchStatsArray.flat();
+        const watchUsers = watchUsersArray.flat();
 
-        const playCount7Days =
-          watchStats.find((i) => i.query_days == 7)?.total_plays ?? 0;
+        // ดึง plexId ของผู้ใช้ที่ดูเนื้อหานี้
+        const plexIds = [...new Set(watchUsers.map((u) => u.user_id))]; // ลบค่า duplicate
 
-        const playCount30Days =
-          watchStats.find((i) => i.query_days == 30)?.total_plays ?? 0;
+        let users: User[] = [];
+        if (plexIds.length > 0) {
+          users = await userRepository
+            .createQueryBuilder('user')
+            .where('user.plexId IN (:...plexIds)', { plexIds })
+            .getMany();
+        }
+
+        // รวมค่า playCount จากหลาย ratingKey
+        const getTotalPlays = (days: number) =>
+          watchStats
+            .filter((i) => i.query_days === days)
+            .reduce((sum, stat) => sum + (stat.total_plays ?? 0), 0);
 
         response.data = {
-          users: users,
-          playCount,
-          playCount7Days,
-          playCount30Days,
+          users,
+          playCount: getTotalPlays(0),
+          playCount7Days: getTotalPlays(7),
+          playCount30Days: getTotalPlays(30),
         };
       }
 
       if (media.ratingKey4k) {
-        const watchStats4k = await tautulli.getMediaWatchStats(
-          media.ratingKey4k
+        const ratingKeys4k = media.ratingKey4k.split(/\s*,\s*/); // แยกค่าที่คั่นด้วย ", "
+
+        // ดึงข้อมูลจาก Tautulli สำหรับทุก key
+        const watchStatsArray4k = await Promise.all(
+          ratingKeys4k.map((key) => tautulli.getMediaWatchStats(key))
         );
-        const watchUsers4k = await tautulli.getMediaWatchUsers(
-          media.ratingKey4k
+        const watchUsersArray4k = await Promise.all(
+          ratingKeys4k.map((key) => tautulli.getMediaWatchUsers(key))
         );
 
-        const users = await userRepository
-          .createQueryBuilder('user')
-          .where('user.plexId IN (:...plexIds)', {
-            plexIds: watchUsers4k.map((u) => u.user_id),
-          })
-          .getMany();
+        // รวมค่าที่ได้จากทุก ratingKey4k
+        const watchStats4k = watchStatsArray4k.flat();
+        const watchUsers4k = watchUsersArray4k.flat();
 
-        const playCount =
-          watchStats4k.find((i) => i.query_days == 0)?.total_plays ?? 0;
+        // ดึง plexId ของผู้ใช้ที่ดูเนื้อหานี้
+        const plexIds4k = [...new Set(watchUsers4k.map((u) => u.user_id))]; // ลบค่า duplicate
 
-        const playCount7Days =
-          watchStats4k.find((i) => i.query_days == 7)?.total_plays ?? 0;
+        let users4k: User[] = [];
+        if (plexIds4k.length > 0) {
+          users4k = await userRepository
+            .createQueryBuilder('user')
+            .where('user.plexId IN (:...plexIds4k)', { plexIds4k })
+            .getMany();
+        }
 
-        const playCount30Days =
-          watchStats4k.find((i) => i.query_days == 30)?.total_plays ?? 0;
+        // รวมค่า playCount จากหลาย ratingKey4k
+        const getTotalPlays = (days: number) =>
+          watchStats4k
+            .filter((i) => i.query_days === days)
+            .reduce((sum, stat) => sum + (stat.total_plays ?? 0), 0);
 
         response.data4k = {
-          users,
-          playCount,
-          playCount7Days,
-          playCount30Days,
+          users: users4k,
+          playCount: getTotalPlays(0),
+          playCount7Days: getTotalPlays(7),
+          playCount30Days: getTotalPlays(30),
         };
       }
 

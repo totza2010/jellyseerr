@@ -2,7 +2,8 @@ import animeList from '@server/api/animelist';
 import type { PlexLibraryItem, PlexMetadata } from '@server/api/plexapi';
 import PlexAPI from '@server/api/plexapi';
 import type { TmdbTvDetails } from '@server/api/themoviedb/interfaces';
-import { getRepository } from '@server/datasource';
+import { MediaStatus, MediaType } from '@server/constants/media';
+import dataSource, { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import cacheManager from '@server/lib/cache';
 import type {
@@ -61,6 +62,209 @@ class PlexScanner
     const sessionId = this.startRun();
     try {
       const userRepository = getRepository(User);
+
+      if (!this.isRecentOnly) {
+        const queryRunner = dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+          // ตรวจสอบจำนวนที่ต้องอัปเดตก่อนอัปเดต
+          const [mediaToUpdate] = await queryRunner.query(
+            `
+            SELECT COUNT(*) AS count FROM media
+            WHERE mediaType = ? AND (
+              status IN (?, ?) OR
+              status4k IN (?, ?) OR
+              ratingKey != ?
+            )`,
+            [
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+            ]
+          );
+
+          const [seasonToUpdate] = await queryRunner.query(
+            `
+            SELECT COUNT(*) AS count FROM season
+            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
+              status IN (?, ?) OR
+              status4k IN (?, ?) OR
+              ratingKey != ?
+            )`,
+            [
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+            ]
+          );
+
+          const [episodeToUpdate] = await queryRunner.query(
+            `SELECT COUNT(*) AS count FROM episode
+             WHERE seasonId IN (
+               SELECT id FROM season WHERE mediaId IN
+               (SELECT id FROM media WHERE mediaType = ?)
+             ) AND (
+               status IN (?, ?) OR
+               status4k IN (?, ?) OR
+               ratingKey != ? OR
+               part != ?
+             )`,
+            [
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+              '',
+            ]
+          );
+
+          this.log(`🟡 Media to update: ${mediaToUpdate.count}`);
+          this.log(`🟡 Seasons to update: ${seasonToUpdate.count}`);
+          this.log(`🟡 Episodes to update: ${episodeToUpdate.count}`);
+
+          // อัปเดตข้อมูล
+          await queryRunner.query(
+            `
+            UPDATE media SET
+              status = ?,
+              status4k = ?,
+              ratingKey = ?
+            WHERE mediaType = ? AND (
+              status IN (?, ?) OR
+              status4k IN (?, ?) OR
+              ratingKey != ?
+            )`,
+            [
+              MediaStatus.UNKNOWN,
+              MediaStatus.UNKNOWN,
+              '',
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+            ]
+          );
+
+          await queryRunner.query(
+            `
+            UPDATE season SET
+              status = ?,
+              status4k = ?,
+              ratingKey = ?
+            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
+              status IN (?, ?) OR
+              status4k IN (?, ?) OR
+              ratingKey != ?
+            )`,
+            [
+              MediaStatus.UNKNOWN,
+              MediaStatus.UNKNOWN,
+              '',
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+            ]
+          );
+
+          await queryRunner.query(
+            `UPDATE episode SET
+              status = ?, status4k = ?, ratingKey = ?, part = ?
+             WHERE seasonId IN (
+               SELECT id FROM season WHERE mediaId IN
+               (SELECT id FROM media WHERE mediaType = ?)
+             ) AND (
+               status IN (?, ?) OR
+               status4k IN (?, ?) OR
+               ratingKey != ? OR
+               part != ?
+             )`,
+            [
+              MediaStatus.UNKNOWN,
+              MediaStatus.UNKNOWN,
+              '',
+              '',
+              MediaType.TV,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              MediaStatus.AVAILABLE,
+              MediaStatus.PARTIALLY_AVAILABLE,
+              '',
+              '',
+            ]
+          );
+
+          // ตรวจสอบจำนวนที่ถูกอัปเดตหลังจากอัปเดต
+          const [mediaUpdated] = await queryRunner.query(
+            `
+            SELECT COUNT(*) AS count FROM media
+            WHERE mediaType = ? AND (
+              status = ? AND
+              status4k = ? AND
+              ratingKey = ?
+            )`,
+            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '']
+          );
+
+          const [seasonUpdated] = await queryRunner.query(
+            `
+            SELECT COUNT(*) AS count FROM season
+            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
+              status = ? AND
+              status4k = ? AND
+              ratingKey = ?
+            )`,
+            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '']
+          );
+
+          const [episodeUpdated] = await queryRunner.query(
+            `
+            SELECT COUNT(*) AS count FROM episode
+            WHERE seasonId IN (
+              SELECT id FROM season WHERE mediaId IN
+              (SELECT id FROM media WHERE mediaType = ?)
+            ) AND (
+              status = ? AND
+              status4k = ? AND
+              ratingKey = ? AND
+              part = ?
+            )`,
+            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '', '']
+          );
+
+          this.log(
+            `✅ Updated media: ${mediaUpdated.count}/${mediaToUpdate.count}`
+          );
+          this.log(
+            `✅ Updated seasons: ${seasonUpdated.count}/${seasonToUpdate.count}`
+          );
+          this.log(
+            `✅ Updated episodes: ${episodeUpdated.count}/${episodeToUpdate.count}`
+          );
+          this.log(`🎉 All updates completed successfully!`);
+
+          await queryRunner.commitTransaction();
+        } catch (error) {
+          this.log(`❌ Error updating media status: ${error}`);
+          await queryRunner.rollbackTransaction();
+        } finally {
+          await queryRunner.release();
+        }
+      }
       const admin = await userRepository.findOne({
         select: { id: true, plexToken: true },
         where: { id: 1 },
@@ -288,6 +492,11 @@ class PlexScanner
         (md) => Number(md.index) === season.season_number
       );
 
+      const tvShowSeason = await this.tmdb.getTvSeason({
+        tvId: mediaIds.tmdbId,
+        seasonNumber: season.season_number,
+      });
+
       if (matchedPlexSeason) {
         // If we have a matched Plex season, get its children metadata so we can check details
         const episodes = await this.plexClient.getChildrenMetadata(
@@ -307,33 +516,56 @@ class PlexScanner
             ).length
           : 0;
 
-        const allEpisodes = episodes.map((episode) => ({
-          episodeNumber: episode.index,
-          ratingKey: episode.ratingKey,
-          part: episode.Media.flatMap((media) =>
-            media.Part.map((part) => ({
-              file: part.file,
-              size: part.size,
-            }))
-          ),
-        }));
+        // ใช้ข้อมูลจาก TMDB เป็นฐาน
+        const allEpisodes = tvShowSeason.episodes.map((episode) => {
+          const plexEpisode = episodes.find(
+            (ep) => ep.index === episode.episode_number
+          );
+
+          return plexEpisode
+            ? {
+                episodeNumber: plexEpisode.index,
+                ratingKey: plexEpisode.ratingKey,
+                part: JSON.stringify(
+                  plexEpisode.Media.flatMap((media) =>
+                    media.Part.map((part) => ({
+                      file: part.file,
+                      key: `${plexitem.ratingKey}, ${matchedPlexSeason.ratingKey}, ${plexEpisode.ratingKey}`,
+                      library: `${metadata.librarySectionTitle ?? ''}`,
+                      size: part.size,
+                    }))
+                  )
+                ),
+              }
+            : {
+                episodeNumber: episode.episode_number,
+                ratingKey: '',
+                part: '[]',
+              };
+        });
 
         processableSeasons.push({
           seasonNumber: season.season_number,
-          ratingKey: matchedPlexSeason.ratingKey,
+          ratingKey: matchedPlexSeason?.ratingKey ?? '',
           episodes: totalStandard,
           episodes4k: total4k,
           totalEpisodes: season.episode_count,
-          allEpisodes: allEpisodes ?? [],
+          allEpisodes: allEpisodes,
         });
       } else {
+        const allEpisodes = tvShowSeason.episodes.map((episode) => ({
+          episodeNumber: episode.episode_number,
+          ratingKey: '',
+          part: '[]',
+        }));
+
         processableSeasons.push({
           seasonNumber: season.season_number,
           ratingKey: '',
           episodes: 0,
           episodes4k: 0,
           totalEpisodes: season.episode_count,
-          allEpisodes: [],
+          allEpisodes: allEpisodes,
         });
       }
     }

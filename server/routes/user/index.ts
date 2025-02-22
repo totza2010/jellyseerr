@@ -25,7 +25,7 @@ import { getHostname } from '@server/utils/getHostname';
 import { Router } from 'express';
 import gravatarUrl from 'gravatar-url';
 import { findIndex, sortBy } from 'lodash';
-import { In } from 'typeorm';
+import { In, Raw } from 'typeorm';
 import userSettingsRoutes from './usersettings';
 
 const router = Router();
@@ -632,59 +632,62 @@ router.get<{ id: string }, UserWatchDataResponse>(
       const watchStats = await tautulli.getUserWatchStats(user);
       const watchHistory = await tautulli.getUserWatchHistory(user);
 
+      const movieKeys = watchHistory
+        .filter((record) => record.media_type === 'movie')
+        .map((record) => record.rating_key);
+
+      const episodeKeys = watchHistory
+        .filter((record) => record.media_type === 'episode')
+        .map((record) => record.grandparent_rating_key);
       const recentlyWatched = sortBy(
         await getRepository(Media).find({
           where: [
             {
               mediaType: MediaType.MOVIE,
-              ratingKey: In(
-                watchHistory
-                  .filter((record) => record.media_type === 'movie')
-                  .map((record) => record.rating_key)
+              ratingKey: Raw((alias) =>
+                movieKeys.map((key) => `${alias} LIKE '%${key}%'`).join(' OR ')
               ),
             },
             {
               mediaType: MediaType.MOVIE,
-              ratingKey4k: In(
-                watchHistory
-                  .filter((record) => record.media_type === 'movie')
-                  .map((record) => record.rating_key)
+              ratingKey4k: Raw((alias) =>
+                movieKeys.map((key) => `${alias} LIKE '%${key}%'`).join(' OR ')
               ),
             },
             {
               mediaType: MediaType.TV,
-              ratingKey: In(
-                watchHistory
-                  .filter((record) => record.media_type === 'episode')
-                  .map((record) => record.grandparent_rating_key)
+              ratingKey: Raw((alias) =>
+                episodeKeys
+                  .map((key) => `${alias} LIKE '%${key}%'`)
+                  .join(' OR ')
               ),
             },
             {
               mediaType: MediaType.TV,
-              ratingKey4k: In(
-                watchHistory
-                  .filter((record) => record.media_type === 'episode')
-                  .map((record) => record.grandparent_rating_key)
+              ratingKey4k: Raw((alias) =>
+                episodeKeys
+                  .map((key) => `${alias} LIKE '%${key}%'`)
+                  .join(' OR ')
               ),
             },
           ],
         }),
         [
           (media) =>
-            findIndex(
-              watchHistory,
-              (record) =>
-                (!!media.ratingKey &&
-                  parseInt(media.ratingKey) ===
-                    (record.media_type === 'movie'
-                      ? record.rating_key
-                      : record.grandparent_rating_key)) ||
-                (!!media.ratingKey4k &&
-                  parseInt(media.ratingKey4k) ===
-                    (record.media_type === 'movie'
-                      ? record.rating_key
-                      : record.grandparent_rating_key))
-            ),
+            findIndex(watchHistory, (record) => {
+              const targetKey = String(
+                record.media_type === 'movie'
+                  ? record.rating_key
+                  : record.grandparent_rating_key
+              );
+
+              return !!(
+                (media.ratingKey &&
+                  media.ratingKey.split(/\s*,\s*/).includes(targetKey)) ||
+                (media.ratingKey4k &&
+                  media.ratingKey4k.split(/\s*,\s*/).includes(targetKey))
+              );
+            }),
         ]
       );
 

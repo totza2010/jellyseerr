@@ -6201,7 +6201,16 @@ paths:
           schema:
             type: string
             nullable: true
-            enum: [all, available, partial, allavailable, processing, pending]
+            enum:
+              [
+                all,
+                available,
+                partial,
+                allavailable,
+                mixed,
+                processing,
+                pending,
+              ]
         - in: query
           name: sort
           schema:

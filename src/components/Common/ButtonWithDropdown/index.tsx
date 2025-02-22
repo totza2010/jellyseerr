@@ -47,7 +47,7 @@ interface ButtonWithDropdownProps {
 interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     ButtonWithDropdownProps {
-  as?: 'button';
+  as?: 'button' | 'div';
 }
 interface AnchorProps
   extends AnchorHTMLAttributes<HTMLAnchorElement>,
@@ -69,9 +69,17 @@ const ButtonWithDropdown = ({
   useClickOutside(buttonRef, () => setIsOpen(false));
 
   const styleClasses = {
-    mainButtonClasses: 'button-md text-white border',
-    dropdownSideButtonClasses: 'button-md border',
-    dropdownClasses: 'button-md',
+    mainButtonClasses: `${
+      className?.includes('button-sm') ? 'button-sm' : 'button-md'
+    } text-white border ${
+      className?.includes('w-full') ? 'w-full' : 'h-full'
+    } ${className?.includes('py-0') ? 'py-0' : 'py-2'}`,
+    dropdownSideButtonClasses: `${
+      className?.includes('button-sm') ? 'button-sm' : 'button-md'
+    } border`,
+    dropdownClasses: `${
+      className?.includes('button-sm') ? 'button-sm' : 'button-md'
+    }`,
   };
 
   switch (buttonType) {
@@ -94,7 +102,7 @@ const ButtonWithDropdown = ({
     <span className="relative inline-flex h-full rounded-md shadow-sm">
       {as === 'a' ? (
         <a
-          className={`relative z-10 inline-flex h-full items-center px-4 py-2 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
+          className={`relative z-10 inline-flex items-center px-4 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
             styleClasses.mainButtonClasses
           } ${children ? 'rounded-l-md' : 'rounded-md'} ${className}`}
           ref={buttonRef as RefObject<HTMLAnchorElement>}
@@ -102,10 +110,20 @@ const ButtonWithDropdown = ({
         >
           {text}
         </a>
+      ) : as === 'div' ? (
+        <div
+          className={`relative z-10 inline-flex items-center px-4 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
+            styleClasses.mainButtonClasses
+          } ${children ? 'rounded-l-md' : 'rounded-md'} ${className}`}
+          ref={buttonRef as unknown as RefObject<HTMLDivElement>}
+          {...(props as React.HTMLAttributes<HTMLDivElement>)}
+        >
+          {text}
+        </div>
       ) : (
         <button
           type="button"
-          className={`relative z-10 inline-flex h-full items-center px-4 py-2 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
+          className={`relative z-10 inline-flex items-center px-4 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
             styleClasses.mainButtonClasses
           } ${children ? 'rounded-l-md' : 'rounded-md'} ${className}`}
           ref={buttonRef as RefObject<HTMLButtonElement>}
@@ -118,7 +136,7 @@ const ButtonWithDropdown = ({
         <span className="relative -ml-px block">
           <button
             type="button"
-            className={`relative z-10 inline-flex h-full items-center rounded-r-md px-2 py-2 text-sm font-medium leading-5 text-white transition duration-150 ease-in-out hover:z-20 focus:z-20 ${styleClasses.dropdownSideButtonClasses}`}
+            className={`relative z-10 inline-flex h-full items-center rounded-r-md px-2 text-sm font-medium leading-5 text-white transition duration-150 ease-in-out hover:z-20 focus:z-20 ${styleClasses.dropdownSideButtonClasses}`}
             aria-label="Expand"
             onClick={() => setIsOpen((state) => !state)}
           >

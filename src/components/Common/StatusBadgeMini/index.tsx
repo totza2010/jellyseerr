@@ -1,6 +1,7 @@
 import Spinner from '@app/assets/spinner.svg';
 import { CheckCircleIcon } from '@heroicons/react/20/solid';
 import {
+  AdjustmentsHorizontalIcon,
   BellIcon,
   ClockIcon,
   EyeSlashIcon,
@@ -63,6 +64,12 @@ const StatusBadgeMini = ({
     case MediaStatus.MISSING:
       badgeStyle.push('bg-red-500 border-red-400 ring-red-400 text-red-100');
       indicatorIcon = <XCircleIcon />;
+      break;
+    case MediaStatus.MIXED_AVAILABILITY:
+      badgeStyle.push(
+        'bg-purple-500 border-purple-400 ring-purple-400 text-purple-100'
+      );
+      indicatorIcon = <AdjustmentsHorizontalIcon />;
       break;
   }
 

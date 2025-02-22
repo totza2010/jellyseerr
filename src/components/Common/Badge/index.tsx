@@ -7,7 +7,7 @@ interface BadgeProps {
     | 'primary'
     | 'danger'
     | 'warning'
-    | 'partially'
+    | 'mixed'
     | 'success'
     | 'dark'
     | 'light';
@@ -65,6 +65,14 @@ const Badge = (
       badgeStyle.push('bg-gray-700 !text-gray-300');
       if (href) {
         badgeStyle.push('hover:bg-gray-600');
+      }
+      break;
+    case 'mixed':
+      badgeStyle.push(
+        'bg-purple-500 bg-opacity-80 border border-purple-500 !text-purple-100'
+      );
+      if (href) {
+        badgeStyle.push('hover:bg-purple-500 hover:bg-opacity-100');
       }
       break;
     default:

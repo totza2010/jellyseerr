@@ -19,14 +19,13 @@ import {
   ChevronRightIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
-import { MediaStatus } from '@server/constants/media';
 import type Media from '@server/entity/Media';
 import type { MediaResultsResponse } from '@server/interfaces/api/mediaInterfaces';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -50,6 +49,7 @@ enum Filter {
   ALL = 'allavailable',
   AVAILABLE = 'available',
   PARTIALLY_AVAILABLE = 'partial',
+  MIXED_AVAILABILITY = 'mixed',
 }
 
 const Library = () => {
@@ -74,6 +74,40 @@ const Library = () => {
       revalidateOnFocus: false,
     }
   );
+
+  // Restore last set filter values on component mount
+  useEffect(() => {
+    const filterString = window.localStorage.getItem('library-filter-settings');
+
+    if (filterString) {
+      const filterSettings = JSON.parse(filterString);
+
+      setCurrentFilter(filterSettings.currentFilter);
+      setCurrentSort(filterSettings.currentSort);
+      setCurrentPageSize(filterSettings.currentPageSize);
+      if (['asc', 'desc'].includes(filterSettings.currentSortDirection)) {
+        setCurrentSortDirection(filterSettings.currentSortDirection);
+      }
+    }
+
+    // If filter value is provided in query, use that instead
+    if (Object.values(Filter).includes(router.query.filter as Filter)) {
+      setCurrentFilter(router.query.filter as Filter);
+    }
+  }, [router.query.filter]);
+
+  // Set filter values to local storage any time they are changed
+  useEffect(() => {
+    window.localStorage.setItem(
+      'library-filter-settings',
+      JSON.stringify({
+        currentFilter,
+        currentSort,
+        currentSortDirection,
+        currentPageSize,
+      })
+    );
+  }, [currentFilter, currentSort, currentSortDirection, currentPageSize]);
 
   // check if there's no data and no errors in the table
   // so as to show a spinner inside the table and not refresh the whole component
@@ -118,6 +152,9 @@ const Library = () => {
               </option>
               <option value="partial">
                 {intl.formatMessage(globalMessages.partiallyavailable)}
+              </option>
+              <option value="mixed">
+                {intl.formatMessage(globalMessages.mixedavailability)}
               </option>
             </select>
           </div>
@@ -366,14 +403,7 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                   return (
                     <span key={`season-${season.id}`} className="mr-2">
                       <StatusBadge
-                        status={
-                          season.episodeCount ===
-                          matchingSeason?.episodes.length
-                            ? MediaStatus.AVAILABLE
-                            : matchingSeason?.episodes.length !== 0
-                            ? MediaStatus.PARTIALLY_AVAILABLE
-                            : MediaStatus.MISSING
-                        }
+                        status={matchingSeason?.status}
                         episode={
                           season.seasonNumber === 0
                             ? intl.formatMessage(globalMessages.specials)
