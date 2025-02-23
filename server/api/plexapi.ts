@@ -104,7 +104,7 @@ class PlexAPI {
     plexSettings,
     timeout,
   }: {
-    plexToken?: string;
+    plexToken?: string | null;
     plexSettings?: PlexSettings;
     timeout?: number;
   }) {
@@ -119,7 +119,7 @@ class PlexAPI {
       port: settingsPlex.port,
       https: settingsPlex.useSsl,
       timeout: timeout,
-      token: plexToken,
+      token: plexToken ?? undefined,
       authenticator: {
         authenticate: (
           _plexApi,

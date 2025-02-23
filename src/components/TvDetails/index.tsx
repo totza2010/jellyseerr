@@ -187,7 +187,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvalaibleMediaServerName(),
+      text: getAvailableMediaServerName(),
       url: deepLinks.mediaUrl,
       svg: <PlayIcon />,
     });
@@ -201,7 +201,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvalaible4kMediaServerName(),
+      text: getAvailable4kMediaServerName(),
       url: deepLinks.mediaUrl4k,
       svg: <PlayIcon />,
     });
@@ -322,7 +322,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       (provider) => provider.iso_3166_1 === streamingRegion
     )?.flatrate ?? [];
 
-  function getAvalaibleMediaServerName(library = '') {
+  function getAvailableMediaServerName(library = '') {
     if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
       return intl.formatMessage(library ? messages.open : messages.play, {
         mediaServerName: library ?? 'Emby',
@@ -340,7 +340,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     });
   }
 
-  function getAvalaible4kMediaServerName() {
+  function getAvailable4kMediaServerName() {
     if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
       return intl.formatMessage(messages.play, { mediaServerName: 'Emby' });
     }
@@ -536,7 +536,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       }
 
       mediaLinksOpen.push({
-        text: getAvalaibleMediaServerName(matchingFile?.library),
+        text: getAvailableMediaServerName(matchingFile?.library),
         tooltip: extractedText,
         url: url,
         svg: <FolderOpenIcon />,
@@ -984,7 +984,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     }
 
                     mediaSeasonLinks.push({
-                      text: getAvalaibleMediaServerName(matchingFile.library),
+                      text: getAvailableMediaServerName(matchingFile.library),
                       tooltip: extractedText,
                       url: url,
                       svg: <FolderOpenIcon />,
