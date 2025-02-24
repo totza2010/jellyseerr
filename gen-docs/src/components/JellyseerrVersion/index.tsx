@@ -7,7 +7,7 @@ export const JellyseerrVersion = () => {
     async function fetchVersion() {
       try {
         const response = await fetch(
-          'https://raw.githubusercontent.com/Fallenbagel/jellyseerr/main/package.json'
+          'https://raw.githubusercontent.com/totza2010/jellyseerr/main/package.json'
         );
 
         const data = await response.json();

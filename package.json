@@ -28,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/fallenbagel/jellyseerr.git"
+    "url": "https://github.com/totza2010/jellyseerr.git"
   },
   "license": "MIT",
   "dependencies": {
@@ -239,8 +239,8 @@
           "COMMIT_TAG": "$GIT_SHA"
         },
         "imageNames": [
-          "fallenbagel/jellyseerr",
-          "ghcr.io/fallenbagel/jellyseerr"
+          "totza2010/jellyseerr",
+          "ghcr.io/totza2010/jellyseerr"
         ],
         "platforms": [
           "linux/amd64",
