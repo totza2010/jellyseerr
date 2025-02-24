@@ -549,7 +549,14 @@ class PlexScanner
           ratingKey: matchedPlexSeason?.ratingKey ?? '',
           episodes: totalStandard,
           episodes4k: total4k,
-          totalEpisodes: season.episode_count,
+          totalEpisodes: tvShowSeason.episodes.filter((episode) => {
+            if (episode.air_date) {
+              const dAirDate = new Date(episode.air_date);
+              const nowDate = new Date();
+              return dAirDate.getTime() < nowDate.getTime();
+            }
+            return true;
+          }).length,
           allEpisodes: allEpisodes,
         });
       } else {
@@ -564,7 +571,14 @@ class PlexScanner
           ratingKey: '',
           episodes: 0,
           episodes4k: 0,
-          totalEpisodes: season.episode_count,
+          totalEpisodes: tvShowSeason.episodes.filter((episode) => {
+            if (episode.air_date) {
+              const dAirDate = new Date(episode.air_date);
+              const nowDate = new Date();
+              return dAirDate.getTime() < nowDate.getTime();
+            }
+            return true;
+          }).length,
           allEpisodes: allEpisodes,
         });
       }

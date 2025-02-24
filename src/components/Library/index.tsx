@@ -400,7 +400,7 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                     (s) => s.seasonNumber === season.seasonNumber
                   );
 
-                  return (
+                  return matchingSeason?.episodes.length ? (
                     <span key={`season-${season.id}`} className="mr-2">
                       <StatusBadge
                         status={matchingSeason?.status}
@@ -417,7 +417,7 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                         plexUrl={seasonLinks?.mediaUrl ?? ''}
                       />
                     </span>
-                  );
+                  ) : null;
                 })}
             </div>
           </div>

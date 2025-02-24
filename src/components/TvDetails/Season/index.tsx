@@ -146,6 +146,10 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
                 });
               });
             }
+            const airsrelative = episode.airDate
+              ? new Date(episode.airDate).getTime() < new Date().getTime()
+              : false;
+
             return (
               <div
                 className="flex flex-col space-y-4 py-4 xl:flex-row xl:space-y-4 xl:space-x-4"
@@ -170,7 +174,8 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
                           <StatusBadgeMini status={MediaStatus.AVAILABLE} />
                         </div>
                       </>
-                    ) : episodeData?.status === MediaStatus.MISSING ? (
+                    ) : episodeData?.status === MediaStatus.MISSING &&
+                      airsrelative ? (
                       <>
                         <div className="hidden md:flex">
                           <Badge badgeType="danger">
