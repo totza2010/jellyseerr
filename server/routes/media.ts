@@ -55,6 +55,22 @@ mediaRoutes.get('/', async (req, res, next) => {
       statusFilter = undefined;
   }
 
+  let mediaTypeFilter = undefined;
+
+  switch (req.query.type) {
+    case 'all':
+      mediaTypeFilter = MediaType.MOVIE || MediaType.TV;
+      break;
+    case 'movie':
+      mediaTypeFilter = MediaType.MOVIE;
+      break;
+    case 'tv':
+      mediaTypeFilter = MediaType.TV;
+      break;
+    default:
+      mediaTypeFilter = undefined;
+  }
+
   // let sortFilter: string;
   let sortDirection: 'ASC' | 'DESC';
 
@@ -87,6 +103,7 @@ mediaRoutes.get('/', async (req, res, next) => {
       order: sortFilter,
       where: statusFilter && {
         status: statusFilter,
+        mediaType: mediaTypeFilter,
       },
       take: pageSize,
       skip,

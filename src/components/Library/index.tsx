@@ -52,9 +52,16 @@ enum Filter {
   MIXED_AVAILABILITY = 'mixed',
 }
 
+enum Type {
+  ALL = 'all',
+  TV = 'tv',
+  MOVIE = 'movie',
+}
+
 const Library = () => {
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
   const [currentFilter, setCurrentFilter] = useState<Filter>(Filter.ALL);
+  const [currentType, setCurrentType] = useState<Type>(Type.ALL);
   const [currentSort, setCurrentSort] = useState<Sort>('mediaAdded');
   const [currentSortDirection, setCurrentSortDirection] =
     useState<SortDirection>('desc');
@@ -66,9 +73,13 @@ const Library = () => {
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
   const { data, error } = useSWR<MediaResultsResponse>(
-    `/api/v1/media/?take=${currentPageSize}
-    &skip=${pageIndex * currentPageSize}
-    &filter=${currentFilter}&sort=${currentSort}&sortDirection=${currentSortDirection}`,
+    `/api/v1/media/?take=${currentPageSize}&skip=${
+      pageIndex * currentPageSize
+    }${
+      currentType !== undefined && currentType !== Type.ALL
+        ? `&type=${currentType}`
+        : ''
+    }&filter=${currentFilter}&sort=${currentSort}&sortDirection=${currentSortDirection}`,
     {
       refreshInterval: 0,
       revalidateOnFocus: false,
@@ -82,6 +93,7 @@ const Library = () => {
     if (filterString) {
       const filterSettings = JSON.parse(filterString);
 
+      setCurrentType(filterSettings.currentType);
       setCurrentFilter(filterSettings.currentFilter);
       setCurrentSort(filterSettings.currentSort);
       setCurrentPageSize(filterSettings.currentPageSize);
@@ -91,23 +103,35 @@ const Library = () => {
     }
 
     // If filter value is provided in query, use that instead
+    if (Object.values(Type).includes(router.query.type as Type)) {
+      setCurrentType(router.query.type as Type);
+    }
+
+    // If filter value is provided in query, use that instead
     if (Object.values(Filter).includes(router.query.filter as Filter)) {
       setCurrentFilter(router.query.filter as Filter);
     }
-  }, [router.query.filter]);
+  }, [router, router.query.type, router.query.filter]);
 
   // Set filter values to local storage any time they are changed
   useEffect(() => {
     window.localStorage.setItem(
       'library-filter-settings',
       JSON.stringify({
+        currentType,
         currentFilter,
         currentSort,
         currentSortDirection,
         currentPageSize,
       })
     );
-  }, [currentFilter, currentSort, currentSortDirection, currentPageSize]);
+  }, [
+    currentType,
+    currentFilter,
+    currentSort,
+    currentSortDirection,
+    currentPageSize,
+  ]);
 
   // check if there's no data and no errors in the table
   // so as to show a spinner inside the table and not refresh the whole component
@@ -125,6 +149,36 @@ const Library = () => {
       <div className="mb-4 flex flex-col justify-between lg:flex-row lg:items-end">
         <Header>{intl.formatMessage(globalMessages.library)}</Header>
         <div className="mt-2 flex flex-grow flex-col sm:flex-row lg:flex-grow-0">
+          <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
+            <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
+              <FunnelIcon className="h-6 w-6" />
+            </span>
+            <select
+              id="type"
+              name="type"
+              onChange={(e) => {
+                setCurrentType(e.target.value as Type);
+                router.push({
+                  pathname: router.pathname,
+                  query: router.query.userId
+                    ? { userId: router.query.userId }
+                    : {},
+                });
+              }}
+              value={currentType}
+              className="rounded-r-only"
+            >
+              <option value="all">
+                {intl.formatMessage(globalMessages.all)}
+              </option>
+              <option value="tv">
+                {intl.formatMessage(globalMessages.tvshows)}
+              </option>
+              <option value="movie">
+                {intl.formatMessage(globalMessages.movies)}
+              </option>
+            </select>
+          </div>
           <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
             <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
               <FunnelIcon className="h-6 w-6" />

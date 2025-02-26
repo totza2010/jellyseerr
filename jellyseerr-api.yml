@@ -6455,6 +6455,12 @@ paths:
             nullable: true
             example: 0
         - in: query
+          name: type
+          schema:
+            type: string
+            nullable: true
+            enum: [all, tv, movie]
+        - in: query
           name: filter
           schema:
             type: string
