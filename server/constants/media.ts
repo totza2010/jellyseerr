@@ -19,4 +19,5 @@ export enum MediaStatus {
   BLACKLISTED,
   MISSING,
   MIXED_AVAILABILITY,
+  IGNORED,
 }

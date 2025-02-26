@@ -874,6 +874,16 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   season.seasonNumber !== 0
               )
               .map((season) => {
+                if (
+                  data &&
+                  data.mediaInfo &&
+                  data.mediaInfo.seasons
+                    .find((s) => s.seasonNumber === season.seasonNumber)
+                    ?.episodes.every(
+                      (episode) => episode.status === MediaStatus.IGNORED
+                    )
+                )
+                  return;
                 const show4k =
                   settings.currentSettings.series4kEnabled &&
                   hasPermission(
@@ -1015,7 +1025,19 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                               </span>
                               <Badge badgeType="dark">
                                 {intl.formatMessage(messages.episodeCount, {
-                                  episodeCount: season.episodeCount,
+                                  episodeCount: data?.mediaInfo
+                                    ? data.mediaInfo.seasons
+                                        .find(
+                                          (s) =>
+                                            s.seasonNumber ===
+                                            season.seasonNumber
+                                        )
+                                        ?.episodes.filter(
+                                          (episode) =>
+                                            episode.status !==
+                                            MediaStatus.IGNORED
+                                        ).length ?? 0
+                                    : season.episodeCount,
                                 })}
                               </Badge>
                             </div>
@@ -1233,14 +1255,18 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                         >
                           <Disclosure.Panel className="w-full rounded-b-md border-b border-l border-r border-gray-700 px-4 pb-2">
                             <Season
-                              tvId={data.id}
+                              tv={data}
                               season={
                                 data?.mediaInfo?.seasons.find(
                                   (s) => s.seasonNumber === season.seasonNumber
                                 ) ?? null
                               }
+                              ignore={
+                                data?.mediaInfo?.status !== MediaStatus.UNKNOWN
+                              }
                               episodeLink={seasonLinks?.episodes}
                               seasonNumber={season.seasonNumber}
+                              onUpdate={() => revalidate()}
                             />
                           </Disclosure.Panel>
                         </Transition>

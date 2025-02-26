@@ -1,5 +1,6 @@
 import { MediaStatus } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
+import { Ignore } from '@server/entity/Ignore';
 import { getSettings } from '@server/lib/settings';
 import {
   AfterLoad,
@@ -8,6 +9,7 @@ import {
   CreateDateColumn,
   Entity,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -43,6 +45,9 @@ class Episode {
     onDelete: 'CASCADE',
   })
   public season: Promise<Season>;
+
+  @OneToOne(() => Ignore, (ignore) => ignore.episode)
+  public ignore: Promise<Ignore>;
 
   @CreateDateColumn()
   public createdAt: Date;

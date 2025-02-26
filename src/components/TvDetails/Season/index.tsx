@@ -1,20 +1,30 @@
 import AirDateBadge from '@app/components/AirDateBadge';
 import Badge from '@app/components/Common/Badge';
+import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import type { OpenButtonLink } from '@app/components/Common/OpenButton';
 import OpenButton from '@app/components/Common/OpenButton';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
+import Tooltip from '@app/components/Common/Tooltip';
+import IgnoreModal from '@app/components/IgnoreModal';
 import useSettings from '@app/hooks/useSettings';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { FolderOpenIcon } from '@heroicons/react/24/outline';
+import { FolderOpenIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { MediaStatus } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
-import type { default as EpisodeEntity } from '@server/entity/Episode';
+import type Episode from '@server/entity/Episode';
 import type { default as SeasonEntity } from '@server/entity/Season';
-import type { SeasonWithEpisodes } from '@server/models/Tv';
+import type {
+  Episode as EpisodeEntity,
+  SeasonWithEpisodes,
+  TvDetails,
+} from '@server/models/Tv';
 import Image from 'next/image';
+import { useCallback, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.TvDetails.Season', {
@@ -27,16 +37,41 @@ const messages = defineMessages('components.TvDetails.Season', {
 type SeasonProps = {
   seasonNumber: number;
   season?: SeasonEntity | null;
-  episodeLink?: Partial<EpisodeEntity>[] | null;
-  tvId: number;
+  episodeLink?: Partial<Episode>[] | null;
+  tv: TvDetails;
+  ignore: boolean;
+  onUpdate: () => void;
 };
 
-const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
+const Season = ({
+  seasonNumber,
+  tv,
+  season,
+  episodeLink,
+  ignore,
+  onUpdate,
+}: SeasonProps) => {
   const intl = useIntl();
   const settings = useSettings();
-  const { data, error } = useSWR<SeasonWithEpisodes>(
-    `/api/v1/tv/${tvId}/season/${seasonNumber}`
+  const {
+    data,
+    error,
+    mutate: revalidate,
+  } = useSWR<SeasonWithEpisodes>(`/api/v1/tv/${tv.id}/season/${seasonNumber}`);
+  const { user, hasPermission } = useUser();
+  const [selectedEpisode, setSelectedEpisode] = useState<EpisodeEntity | null>(
+    null
   );
+  const [isIgnoreUpdating, setIsIgnoreUpdating] = useState<boolean>(false);
+  const [showIgnoreModal, setShowIgnoreModal] = useState(false);
+  const { addToast } = useToasts();
+
+  const closeIgnoreModal = useCallback(() => {
+    setShowIgnoreModal(false);
+    setSelectedEpisode(null);
+  }, []);
+
+  const showIgnoreButton = hasPermission(Permission.ADMIN);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -64,8 +99,72 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
     });
   }
 
+  const onClickIgnoreItemBtn = async (): Promise<void> => {
+    if (!selectedEpisode) return;
+    setIsIgnoreUpdating(true);
+
+    const res = await fetch('/api/v1/ignore', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tmdbId: tv.id,
+        seasonNumber: data?.seasonNumber,
+        seasonTitle: data?.name,
+        episodeNumber: selectedEpisode?.episodeNumber,
+        episodeTitle: selectedEpisode?.name,
+        user: user?.id,
+      }),
+    });
+
+    if (res.status === 201) {
+      addToast(
+        <span>
+          {intl.formatMessage(globalMessages.ignoreSuccess, {
+            title: tv.name,
+            strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
+          })}
+        </span>,
+        { appearance: 'success', autoDismiss: true }
+      );
+
+      revalidate();
+    } else if (res.status === 412) {
+      addToast(
+        <span>
+          {intl.formatMessage(globalMessages.ignoreDuplicateError, {
+            title: tv.name,
+            strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
+          })}
+        </span>,
+        { appearance: 'info', autoDismiss: true }
+      );
+    } else {
+      addToast(intl.formatMessage(globalMessages.ignoreError), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    }
+
+    onUpdate && onUpdate();
+
+    setIsIgnoreUpdating(false);
+    closeIgnoreModal();
+  };
+
   return (
     <div className="flex flex-col justify-center divide-y divide-gray-700">
+      <IgnoreModal
+        tv={tv}
+        season={data}
+        episodeNumber={selectedEpisode?.episodeNumber || null}
+        show={showIgnoreModal}
+        onCancel={closeIgnoreModal}
+        onComplete={onClickIgnoreItemBtn}
+        isUpdating={isIgnoreUpdating}
+      />
       {data.episodes.length === 0 ? (
         <p>{intl.formatMessage(messages.noepisodes)}</p>
       ) : (
@@ -79,6 +178,7 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
             const episodeData = season?.episodes?.find(
               (e) => e.episodeNumber === episode.episodeNumber
             );
+            if (episodeData?.status === MediaStatus.IGNORED) return;
             const episodeFile = episodeData?.part
               ? JSON.parse(episodeData.part)
               : [];
@@ -150,6 +250,21 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
               ? new Date(episode.airDate).getTime() < new Date().getTime()
               : false;
 
+            const shouldShowIgnoreButton = () => {
+              if (!showIgnoreButton || !episodeData?.status) return false;
+
+              const invalidStatuses: MediaStatus[] = [
+                MediaStatus.PROCESSING,
+                MediaStatus.AVAILABLE,
+                MediaStatus.PARTIALLY_AVAILABLE,
+                MediaStatus.PENDING,
+                MediaStatus.BLACKLISTED,
+                MediaStatus.IGNORED,
+              ];
+
+              return !invalidStatuses.includes(episodeData.status) && ignore;
+            };
+
             return (
               <div
                 className="flex flex-col space-y-4 py-4 xl:flex-row xl:space-y-4 xl:space-x-4"
@@ -187,6 +302,23 @@ const Season = ({ seasonNumber, tvId, season, episodeLink }: SeasonProps) => {
                         </div>
                       </>
                     ) : null}
+                    {shouldShowIgnoreButton() && (
+                      <Tooltip
+                        content={intl.formatMessage(globalMessages.addToIgnore)}
+                      >
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40 mr-2"
+                          buttonSize={'sm'}
+                          onClick={() => {
+                            setSelectedEpisode(episode || null);
+                            setShowIgnoreModal(true);
+                          }}
+                        >
+                          <XMarkIcon className={'h-3'} />
+                        </Button>
+                      </Tooltip>
+                    )}
                     <OpenButton links={mediaSeasonLinks} />
                   </div>
                   {episode.overview && <p>{episode.overview}</p>}

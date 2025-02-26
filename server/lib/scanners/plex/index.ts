@@ -4,6 +4,7 @@ import PlexAPI from '@server/api/plexapi';
 import type { TmdbTvDetails } from '@server/api/themoviedb/interfaces';
 import { MediaStatus, MediaType } from '@server/constants/media';
 import dataSource, { getRepository } from '@server/datasource';
+import { Ignore } from '@server/entity/Ignore';
 import { User } from '@server/entity/User';
 import cacheManager from '@server/lib/cache';
 import type {
@@ -463,6 +464,7 @@ class PlexScanner
     });
 
     const mediaIds = await this.getMediaIds(metadata);
+    const ignoreRepository = getRepository(Ignore);
 
     // If the media is from HAMA, and doesn't have a TVDb ID, we will treat it
     // as a special HAMA movie
@@ -543,20 +545,35 @@ class PlexScanner
                 part: '[]',
               };
         });
+        const episodeFilterResults = await Promise.all(
+          tvShowSeason.episodes.map(async (episode) => {
+            if (ignoreRepository) {
+              const data = await ignoreRepository.findOne({
+                where: {
+                  tmdbId: mediaIds.tmdbId,
+                  seasonNumber: season.season_number,
+                  episodeNumber: episode.episode_number,
+                },
+              });
+              return !data;
+            }
+
+            if (episode.air_date) {
+              const dAirDate = new Date(episode.air_date);
+              const nowDate = new Date();
+              return dAirDate.getTime() < nowDate.getTime();
+            }
+
+            return true;
+          })
+        );
 
         processableSeasons.push({
           seasonNumber: season.season_number,
           ratingKey: matchedPlexSeason?.ratingKey ?? '',
           episodes: totalStandard,
           episodes4k: total4k,
-          totalEpisodes: tvShowSeason.episodes.filter((episode) => {
-            if (episode.air_date) {
-              const dAirDate = new Date(episode.air_date);
-              const nowDate = new Date();
-              return dAirDate.getTime() < nowDate.getTime();
-            }
-            return true;
-          }).length,
+          totalEpisodes: episodeFilterResults.filter(Boolean).length,
           allEpisodes: allEpisodes,
         });
       } else {
@@ -565,20 +582,35 @@ class PlexScanner
           ratingKey: '',
           part: '[]',
         }));
+        const episodeFilterResults = await Promise.all(
+          tvShowSeason.episodes.map(async (episode) => {
+            if (ignoreRepository) {
+              const data = await ignoreRepository.findOne({
+                where: {
+                  tmdbId: mediaIds.tmdbId,
+                  seasonNumber: season.season_number,
+                  episodeNumber: episode.episode_number,
+                },
+              });
+              return !!data;
+            }
+
+            if (episode.air_date) {
+              const dAirDate = new Date(episode.air_date);
+              const nowDate = new Date();
+              return dAirDate.getTime() < nowDate.getTime();
+            }
+
+            return true;
+          })
+        );
 
         processableSeasons.push({
           seasonNumber: season.season_number,
           ratingKey: '',
           episodes: 0,
           episodes4k: 0,
-          totalEpisodes: tvShowSeason.episodes.filter((episode) => {
-            if (episode.air_date) {
-              const dAirDate = new Date(episode.air_date);
-              const nowDate = new Date();
-              return dAirDate.getTime() < nowDate.getTime();
-            }
-            return true;
-          }).length,
+          totalEpisodes: episodeFilterResults.filter(Boolean).length,
           allEpisodes: allEpisodes,
         });
       }

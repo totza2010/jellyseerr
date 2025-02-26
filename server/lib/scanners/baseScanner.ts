@@ -2,6 +2,7 @@ import TheMovieDb from '@server/api/themoviedb';
 import { MediaStatus, MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Episode from '@server/entity/Episode';
+import { Ignore } from '@server/entity/Ignore';
 import Media from '@server/entity/Media';
 import Season from '@server/entity/Season';
 import { getSettings } from '@server/lib/settings';
@@ -255,7 +256,7 @@ class BaseScanner<T> {
       hasIncomplete: boolean,
       isProcessing: boolean
     ) => {
-      if (prevStatus === MediaStatus.UNKNOWN) {
+      if (prevStatus === MediaStatus.UNKNOWN || MediaStatus.PROCESSING) {
         return hasComplete
           ? MediaStatus.AVAILABLE
           : hasIncomplete
@@ -289,6 +290,7 @@ class BaseScanner<T> {
 
     await this.asyncLock.dispatch(tmdbId, async () => {
       const media = await this.getExisting(tmdbId, MediaType.TV);
+      const ignoreRepository = getRepository(Ignore);
 
       const newSeasons: Season[] = [];
 
@@ -402,6 +404,13 @@ class BaseScanner<T> {
           const existingEpisode = targetSeason?.episodes?.find(
             (es) => es.episodeNumber === episode.episodeNumber
           );
+          const ignoreData = await ignoreRepository.findOne({
+            where: {
+              tmdbId: tmdbId,
+              seasonNumber: season.seasonNumber,
+              episodeNumber: episode.episodeNumber,
+            },
+          });
 
           if (existingEpisode) {
             if (
@@ -428,6 +437,8 @@ class BaseScanner<T> {
                     (s) => s.status === MediaStatus.PARTIALLY_AVAILABLE
                   )
                 ? MediaStatus.MISSING
+                : ignoreData
+                ? MediaStatus.IGNORED
                 : MediaStatus.UNKNOWN;
           } else {
             newEpisodes.push(
@@ -444,6 +455,8 @@ class BaseScanner<T> {
                         (s) => s.status === MediaStatus.PARTIALLY_AVAILABLE
                       )
                     ? MediaStatus.MISSING
+                    : ignoreData
+                    ? MediaStatus.IGNORED
                     : MediaStatus.UNKNOWN,
               })
             );
@@ -470,27 +483,28 @@ class BaseScanner<T> {
         }
       }
 
-      const isAllStandardSeasons =
-        seasons.length &&
-        seasons
-          .filter((season) => season.totalEpisodes > 0)
-          .every(
-            (season) =>
-              season.episodes === season.totalEpisodes && season.episodes > 0
-          );
-
-      const isAll4kSeasons =
-        seasons.length &&
-        seasons
-          .filter((season) => season.totalEpisodes > 0)
-          .every(
-            (season) =>
-              season.episodes4k === season.totalEpisodes &&
-              season.episodes4k > 0
-          );
-
       if (media) {
         media.seasons = [...media.seasons, ...newSeasons];
+
+        const isAllStandardSeasons =
+          media.seasons.length &&
+          media.seasons
+            .filter((season) => season.episodes.length > 0)
+            .every((season) =>
+              season.episodes
+                .filter((episode) => episode.status !== MediaStatus.IGNORED)
+                .every((episode) => episode.status === MediaStatus.AVAILABLE)
+            );
+
+        const isAll4kSeasons =
+          media.seasons.length &&
+          media.seasons
+            .filter((season) => season.episodes.length > 0)
+            .every((season) =>
+              season.episodes
+                .filter((episode) => episode.status4k !== MediaStatus.IGNORED)
+                .every((episode) => episode.status4k === MediaStatus.AVAILABLE)
+            );
 
         const newStandardSeasonsAvailable = (
           media.seasons.filter(
@@ -578,6 +592,25 @@ class BaseScanner<T> {
         await mediaRepository.save(media);
         this.log(`Updating existing title: ${title}`);
       } else {
+        const isAllStandardSeasons =
+          newSeasons.length &&
+          newSeasons
+            .filter((season) => season.episodes.length > 0)
+            .every((season) =>
+              season.episodes
+                .filter((episode) => episode.status !== MediaStatus.IGNORED)
+                .every((episode) => episode.status === MediaStatus.AVAILABLE)
+            );
+
+        const isAll4kSeasons =
+          newSeasons.length &&
+          newSeasons
+            .filter((season) => season.episodes.length > 0)
+            .every((season) =>
+              season.episodes
+                .filter((episode) => episode.status4k !== MediaStatus.IGNORED)
+                .every((episode) => episode.status4k === MediaStatus.AVAILABLE)
+            );
         const newMedia = new Media({
           mediaType: MediaType.TV,
           seasons: newSeasons,

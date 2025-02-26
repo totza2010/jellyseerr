@@ -26,7 +26,7 @@ import {
 } from './common';
 import type { Video } from './Movie';
 
-interface Episode {
+export interface Episode {
   id: number;
   name: string;
   airDate: string | null;

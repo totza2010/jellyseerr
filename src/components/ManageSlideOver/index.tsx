@@ -5,6 +5,7 @@ import ConfirmButton from '@app/components/Common/ConfirmButton';
 import SlideOver from '@app/components/Common/SlideOver';
 import Tooltip from '@app/components/Common/Tooltip';
 import DownloadBlock from '@app/components/DownloadBlock';
+import IgnoreBlock from '@app/components/IgnoreBlock';
 import IssueBlock from '@app/components/IssueBlock';
 import RequestBlock from '@app/components/RequestBlock';
 import useSettings from '@app/hooks/useSettings';
@@ -24,6 +25,7 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
+import type { Ignore } from '@server/entity/Ignore';
 import type { MediaWatchDataResponse } from '@server/interfaces/api/mediaInterfaces';
 import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import type { MovieDetails } from '@server/models/Movie';
@@ -107,6 +109,9 @@ const ManageSlideOver = ({
   );
   const { data: sonarrData } = useSWR<SonarrSettings[]>(
     hasPermission(Permission.ADMIN) ? '/api/v1/settings/sonarr' : null
+  );
+  const { data: ignoreData = [] } = useSWR<[Ignore] | []>(
+    `/api/v1/ignore/${data.mediaInfo?.tmdbId}`
   );
 
   const deleteMedia = async () => {
@@ -245,7 +250,11 @@ const ManageSlideOver = ({
         tooltip: extractedText,
       };
     }) || [];
-
+  const hasIgnoredEpisode =
+    ignoreData.length > 0 ||
+    data.mediaInfo?.seasons?.some((season) =>
+      season.episodes?.some((episode) => episode.status === MediaStatus.IGNORED)
+    );
   return (
     <SlideOver
       show={show}
@@ -344,6 +353,19 @@ const ManageSlideOver = ({
                 tmdbId={data.mediaInfo.tmdbId}
                 onUpdate={() => revalidate()}
                 onDelete={() => onClose()}
+              />
+            </div>
+          </div>
+        )}
+        {data.mediaInfo?.status && hasIgnoredEpisode && (
+          <div>
+            <h3 className="mb-2 text-xl font-bold">
+              {intl.formatMessage(globalMessages.ignore)}
+            </h3>
+            <div className="overflow-hidden rounded-md border border-gray-700 shadow">
+              <IgnoreBlock
+                tmdbId={data.mediaInfo.tmdbId}
+                onUpdate={() => revalidate()}
               />
             </div>
           </div>
