@@ -29,6 +29,7 @@ export const menuMessages = defineMessages('components.Layout.Sidebar', {
   library: 'Library',
   requests: 'Requests',
   blacklist: 'Blacklist',
+  ignore: 'Ignore',
   issues: 'Issues',
   users: 'Users',
   settings: 'Settings',
@@ -90,6 +91,14 @@ const SidebarLinks: SidebarLinkProps[] = [
       Permission.MANAGE_BLACKLIST,
       Permission.VIEW_BLACKLIST,
     ],
+    permissionType: 'or',
+  },
+  {
+    href: '/ignore',
+    messagesKey: 'ignore',
+    svgIcon: <EyeSlashIcon className="mr-3 h-6 w-6" />,
+    activeRegExp: /^\/ignore/,
+    requiredPermission: [Permission.ADMIN],
     permissionType: 'or',
   },
   {

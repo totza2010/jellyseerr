@@ -111,7 +111,9 @@ const ManageSlideOver = ({
     hasPermission(Permission.ADMIN) ? '/api/v1/settings/sonarr' : null
   );
   const { data: ignoreData = [] } = useSWR<[Ignore] | []>(
-    `/api/v1/ignore/${data.mediaInfo?.tmdbId}`
+    hasPermission(Permission.ADMIN)
+      ? `/api/v1/ignore/${data.mediaInfo?.tmdbId}`
+      : []
   );
 
   const deleteMedia = async () => {
@@ -357,19 +359,21 @@ const ManageSlideOver = ({
             </div>
           </div>
         )}
-        {data.mediaInfo?.status && hasIgnoredEpisode && (
-          <div>
-            <h3 className="mb-2 text-xl font-bold">
-              {intl.formatMessage(globalMessages.ignore)}
-            </h3>
-            <div className="overflow-hidden rounded-md border border-gray-700 shadow">
-              <IgnoreBlock
-                tmdbId={data.mediaInfo.tmdbId}
-                onUpdate={() => revalidate()}
-              />
+        {data.mediaInfo?.status &&
+          hasIgnoredEpisode &&
+          hasPermission(Permission.ADMIN) && (
+            <div>
+              <h3 className="mb-2 text-xl font-bold">
+                {intl.formatMessage(globalMessages.ignore)}
+              </h3>
+              <div className="overflow-hidden rounded-md border border-gray-700 shadow">
+                <IgnoreBlock
+                  tmdbId={data.mediaInfo.tmdbId}
+                  onUpdate={() => revalidate()}
+                />
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {hasPermission(Permission.ADMIN) &&
           (data.mediaInfo?.serviceUrl ||
             data.mediaInfo?.tautulliUrl ||

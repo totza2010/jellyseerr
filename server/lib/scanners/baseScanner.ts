@@ -236,8 +236,8 @@ class BaseScanner<T> {
    */
   protected async processShow(
     tmdbId: number,
-    tvdbId: number,
     seasons: ProcessableSeason[],
+    tvdbId?: number,
     {
       mediaAddedAt,
       ratingKey,
@@ -256,7 +256,10 @@ class BaseScanner<T> {
       hasIncomplete: boolean,
       isProcessing: boolean
     ) => {
-      if (prevStatus === MediaStatus.UNKNOWN || MediaStatus.PROCESSING) {
+      if (
+        prevStatus === MediaStatus.UNKNOWN ||
+        prevStatus === MediaStatus.PROCESSING
+      ) {
         return hasComplete
           ? MediaStatus.AVAILABLE
           : hasIncomplete

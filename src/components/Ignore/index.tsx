@@ -387,7 +387,7 @@ const IgnoredItem = ({ item, revalidateList }: IgnoredItemProps) => {
         </div>
       </div>
       <div className="z-10 mt-4 flex w-full flex-col justify-center space-y-2 pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
-        {hasPermission(Permission.MANAGE_BLACKLIST) && (
+        {hasPermission(Permission.ADMIN) && (
           <ConfirmButton
             onClick={() =>
               removeFromIgnore(

@@ -26,9 +26,7 @@ export const ignoreAdd = z.object({
 
 ignoreRoutes.get(
   '/',
-  isAuthenticated([Permission.MANAGE_BLACKLIST, Permission.VIEW_BLACKLIST], {
-    type: 'or',
-  }),
+  isAuthenticated(Permission.ADMIN),
   async (req, res, next) => {
     const pageSize = req.query.take ? Number(req.query.take) : 25;
     const skip = req.query.skip ? Number(req.query.skip) : 0;
@@ -80,9 +78,7 @@ ignoreRoutes.get(
 
 ignoreRoutes.get(
   '/:id',
-  isAuthenticated([Permission.MANAGE_BLACKLIST], {
-    type: 'or',
-  }),
+  isAuthenticated(Permission.ADMIN),
   async (req, res, next) => {
     try {
       const ignoreRepository = getRepository(Ignore);
@@ -106,9 +102,7 @@ ignoreRoutes.get(
 
 ignoreRoutes.post(
   '/',
-  isAuthenticated([Permission.MANAGE_BLACKLIST], {
-    type: 'or',
-  }),
+  isAuthenticated(Permission.ADMIN),
   async (req, res, next) => {
     try {
       const values = ignoreAdd.parse(req.body);
@@ -144,9 +138,7 @@ ignoreRoutes.post(
 
 ignoreRoutes.delete(
   '/',
-  isAuthenticated([Permission.MANAGE_BLACKLIST], {
-    type: 'or',
-  }),
+  isAuthenticated(Permission.ADMIN),
   async (req, res, next) => {
     try {
       const ignoreRepository = getRepository(Ignore);

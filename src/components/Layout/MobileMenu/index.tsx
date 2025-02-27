@@ -108,6 +108,15 @@ const MobileMenu = () => {
       permissionType: 'or',
     },
     {
+      href: '/ignore',
+      content: intl.formatMessage(menuMessages.ignore),
+      svgIcon: <EyeSlashIcon className="h-6 w-6" />,
+      svgIconSelected: <FilledEyeSlashIcon className="h-6 w-6" />,
+      activeRegExp: /^\/ignore/,
+      requiredPermission: [Permission.ADMIN],
+      permissionType: 'or',
+    },
+    {
       href: '/issues',
       content: intl.formatMessage(menuMessages.issues),
       svgIcon: <ExclamationTriangleIcon className="h-6 w-6" />,

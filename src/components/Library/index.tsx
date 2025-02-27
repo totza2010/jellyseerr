@@ -381,7 +381,7 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
   if (!title && !error) {
     return (
       <div
-        className="h-64 w-full animate-pulse rounded-xl bg-gray-800 xl:h-28"
+        className="h-64 w-full animate-pulse rounded-xl bg-gray-800 sm:w-96"
         ref={ref}
       />
     );

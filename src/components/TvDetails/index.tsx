@@ -997,7 +997,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     }
 
                     mediaSeasonLinks.push({
-                      text: getAvailableMediaServerName(matchingFile.library),
+                      text: getAvailableMediaServerName(matchingFile?.library),
                       tooltip: extractedText,
                       url: url,
                       svg: <FolderOpenIcon />,

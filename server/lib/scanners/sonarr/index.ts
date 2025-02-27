@@ -124,7 +124,7 @@ class SonarrScanner
         });
       }
 
-      await this.processShow(tmdbId, sonarrSeries.tvdbId, processableSeasons, {
+      await this.processShow(tmdbId, processableSeasons, sonarrSeries.tvdbId, {
         serviceId: this.currentServer.id,
         externalServiceId: sonarrSeries.id,
         externalServiceSlug: sonarrSeries.titleSlug,

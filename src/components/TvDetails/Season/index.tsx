@@ -239,7 +239,7 @@ const Season = ({
                 }
 
                 mediaSeasonLinks.push({
-                  text: getAvalaibleMediaServerName(matchingFile.library),
+                  text: getAvalaibleMediaServerName(matchingFile?.library),
                   tooltip: extractedText,
                   url: url,
                   svg: <FolderOpenIcon />,
@@ -302,23 +302,26 @@ const Season = ({
                         </div>
                       </>
                     ) : null}
-                    {shouldShowIgnoreButton() && (
-                      <Tooltip
-                        content={intl.formatMessage(globalMessages.addToIgnore)}
-                      >
-                        <Button
-                          buttonType={'ghost'}
-                          className="z-40 mr-2"
-                          buttonSize={'sm'}
-                          onClick={() => {
-                            setSelectedEpisode(episode || null);
-                            setShowIgnoreModal(true);
-                          }}
+                    {shouldShowIgnoreButton() &&
+                      hasPermission(Permission.ADMIN) && (
+                        <Tooltip
+                          content={intl.formatMessage(
+                            globalMessages.addToIgnore
+                          )}
                         >
-                          <XMarkIcon className={'h-3'} />
-                        </Button>
-                      </Tooltip>
-                    )}
+                          <Button
+                            buttonType={'ghost'}
+                            className="z-40 mr-2"
+                            buttonSize={'sm'}
+                            onClick={() => {
+                              setSelectedEpisode(episode || null);
+                              setShowIgnoreModal(true);
+                            }}
+                          >
+                            <XMarkIcon className={'h-3'} />
+                          </Button>
+                        </Tooltip>
+                      )}
                     <OpenButton links={mediaSeasonLinks} />
                   </div>
                   {episode.overview && <p>{episode.overview}</p>}
