@@ -27,7 +27,7 @@ import { useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 import { useToasts } from 'react-toast-notifications';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestList.RequestItem', {
   seasons: '{seasonCount, plural, one {Season} other {Seasons}}',
@@ -69,6 +69,7 @@ const RequestItemError = ({
     });
     if (!res.ok) throw new Error();
     revalidateList();
+    mutate('/api/v1/request/count');
   };
 
   const deepLinks = useDeepLinks(requestData?.media);
@@ -335,6 +336,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
 
     if (data) {
       revalidate();
+      mutate('/api/v1/request/count');
     }
   };
 
@@ -345,6 +347,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
     if (!res.ok) throw new Error();
 
     revalidateList();
+    mutate('/api/v1/request/count');
   };
 
   const deleteMediaFile = async () => {
