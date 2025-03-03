@@ -2,9 +2,12 @@ import animeList from '@server/api/animelist';
 import type { PlexLibraryItem, PlexMetadata } from '@server/api/plexapi';
 import PlexAPI from '@server/api/plexapi';
 import type { TmdbTvDetails } from '@server/api/themoviedb/interfaces';
-import { MediaStatus, MediaType } from '@server/constants/media';
+import { MediaStatus } from '@server/constants/media';
 import dataSource, { getRepository } from '@server/datasource';
+import Episode from '@server/entity/Episode';
 import { Ignore } from '@server/entity/Ignore';
+import Media from '@server/entity/Media';
+import Season from '@server/entity/Season';
 import { User } from '@server/entity/User';
 import cacheManager from '@server/lib/cache';
 import type {
@@ -67,205 +70,143 @@ class PlexScanner
       if (!this.isRecentOnly) {
         const queryRunner = dataSource.createQueryRunner();
         await queryRunner.connect();
-        await queryRunner.startTransaction();
 
         try {
-          // ตรวจสอบจำนวนที่ต้องอัปเดตก่อนอัปเดต
-          const [mediaToUpdate] = await queryRunner.query(
-            `
-            SELECT COUNT(*) AS count FROM media
-            WHERE mediaType = ? AND (
-              status IN (?, ?) OR
-              status4k IN (?, ?) OR
-              ratingKey != ?
-            )`,
-            [
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-            ]
-          );
+          await queryRunner.startTransaction();
 
-          const [seasonToUpdate] = await queryRunner.query(
-            `
-            SELECT COUNT(*) AS count FROM season
-            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
-              status IN (?, ?) OR
-              status4k IN (?, ?) OR
-              ratingKey != ?
-            )`,
-            [
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-            ]
-          );
+          const mediaRepository = queryRunner.manager.getRepository(Media);
+          const seasonRepository = queryRunner.manager.getRepository(Season);
+          const episodeRepository = queryRunner.manager.getRepository(Episode);
 
-          const [episodeToUpdate] = await queryRunner.query(
-            `SELECT COUNT(*) AS count FROM episode
-             WHERE seasonId IN (
-               SELECT id FROM season WHERE mediaId IN
-               (SELECT id FROM media WHERE mediaType = ?)
-             ) AND (
-               status IN (?, ?) OR
-               status4k IN (?, ?) OR
-               ratingKey != ? OR
-               part != ?
-             )`,
-            [
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-              '',
-            ]
-          );
+          const statusValues = [
+            MediaStatus.AVAILABLE,
+            MediaStatus.PARTIALLY_AVAILABLE,
+          ];
 
-          this.log(`🟡 Media to update: ${mediaToUpdate.count}`);
-          this.log(`🟡 Seasons to update: ${seasonToUpdate.count}`);
-          this.log(`🟡 Episodes to update: ${episodeToUpdate.count}`);
+          this.log('🔍 Counting media to update...');
+          const mediaToUpdate = await mediaRepository
+            .createQueryBuilder('media')
+            .where(
+              '(media.status IN (:...statusValues) OR media.status4k IN (:...statusValues) OR media.ratingKey IS NOT NULL OR media.ratingKey4k IS NOT NULL OR media.parts IS NOT NULL)',
+              { statusValues }
+            )
+            .getCount();
+          this.log(`🟡 Media to update: ${mediaToUpdate}`);
 
-          // อัปเดตข้อมูล
-          await queryRunner.query(
-            `
-            UPDATE media SET
-              status = ?,
-              status4k = ?,
-              ratingKey = ?
-            WHERE mediaType = ? AND (
-              status IN (?, ?) OR
-              status4k IN (?, ?) OR
-              ratingKey != ?
-            )`,
-            [
-              MediaStatus.UNKNOWN,
-              MediaStatus.UNKNOWN,
-              '',
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-            ]
-          );
+          this.log('🔍 Counting seasons to update...');
+          const seasonToUpdate = await seasonRepository
+            .createQueryBuilder('season')
+            .innerJoin('season.media', 'media')
+            .where(
+              '(season.status IN (:...statusValues) OR season.status4k IN (:...statusValues) OR season.ratingKey IS NOT NULL OR season.ratingKey4k IS NOT NULL)',
+              { statusValues }
+            )
+            .getCount();
+          this.log(`🟡 Seasons to update: ${seasonToUpdate}`);
 
-          await queryRunner.query(
-            `
-            UPDATE season SET
-              status = ?,
-              status4k = ?,
-              ratingKey = ?
-            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
-              status IN (?, ?) OR
-              status4k IN (?, ?) OR
-              ratingKey != ?
-            )`,
-            [
-              MediaStatus.UNKNOWN,
-              MediaStatus.UNKNOWN,
-              '',
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-            ]
-          );
+          this.log('🔍 Counting episodes to update...');
+          const episodeToUpdate = await episodeRepository
+            .createQueryBuilder('episode')
+            .innerJoin('episode.season', 'season')
+            .innerJoin('season.media', 'media')
+            .where(
+              '(episode.status IN (:...statusValues) OR episode.status4k IN (:...statusValues) OR episode.ratingKey IS NOT NULL OR episode.ratingKey4k IS NOT NULL OR episode.part IS NOT NULL)',
+              { statusValues }
+            )
+            .getCount();
+          this.log(`🟡 Episodes to update: ${episodeToUpdate}`);
 
-          await queryRunner.query(
-            `UPDATE episode SET
-              status = ?, status4k = ?, ratingKey = ?, part = ?
-             WHERE seasonId IN (
-               SELECT id FROM season WHERE mediaId IN
-               (SELECT id FROM media WHERE mediaType = ?)
-             ) AND (
-               status IN (?, ?) OR
-               status4k IN (?, ?) OR
-               ratingKey != ? OR
-               part != ?
-             )`,
-            [
-              MediaStatus.UNKNOWN,
-              MediaStatus.UNKNOWN,
-              '',
-              '',
-              MediaType.TV,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              MediaStatus.AVAILABLE,
-              MediaStatus.PARTIALLY_AVAILABLE,
-              '',
-              '',
-            ]
-          );
+          this.log('🔄 Updating media...');
+          await mediaRepository
+            .createQueryBuilder()
+            .update(Media)
+            .set({
+              status: MediaStatus.DISABLED,
+              status4k: MediaStatus.DISABLED,
+              ratingKey: null,
+              ratingKey4k: null,
+              parts: null,
+            })
+            .where(
+              '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL)',
+              { statusValues }
+            )
+            .execute();
+          this.log('✅ Media update complete');
 
-          // ตรวจสอบจำนวนที่ถูกอัปเดตหลังจากอัปเดต
-          const [mediaUpdated] = await queryRunner.query(
-            `
-            SELECT COUNT(*) AS count FROM media
-            WHERE mediaType = ? AND (
-              status = ? AND
-              status4k = ? AND
-              ratingKey = ?
-            )`,
-            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '']
-          );
+          this.log('🔍 Fetching media IDs...');
+          const mediaIdList = await mediaRepository
+            .createQueryBuilder('media')
+            .select('media.id', 'id')
+            .getRawMany()
+            .then((rows) => rows.map((row) => row.id));
+          this.log(`🆔 Media IDs: ${JSON.stringify(mediaIdList)}`);
 
-          const [seasonUpdated] = await queryRunner.query(
-            `
-            SELECT COUNT(*) AS count FROM season
-            WHERE mediaId IN (SELECT id FROM media WHERE mediaType = ?) AND (
-              status = ? AND
-              status4k = ? AND
-              ratingKey = ?
-            )`,
-            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '']
-          );
+          if (mediaIdList.length > 0) {
+            this.log('🔄 Updating seasons...');
+            await seasonRepository
+              .createQueryBuilder()
+              .update(Season)
+              .set({
+                status: MediaStatus.DISABLED,
+                status4k: MediaStatus.DISABLED,
+                ratingKey: null,
+                ratingKey4k: null,
+              })
+              .where('mediaId IN (:...mediaIds)', {
+                mediaIds: mediaIdList.length ? mediaIdList : [0],
+              })
+              .andWhere(
+                '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL)',
+                { statusValues }
+              )
+              .execute();
+            this.log('✅ Seasons update complete');
 
-          const [episodeUpdated] = await queryRunner.query(
-            `
-            SELECT COUNT(*) AS count FROM episode
-            WHERE seasonId IN (
-              SELECT id FROM season WHERE mediaId IN
-              (SELECT id FROM media WHERE mediaType = ?)
-            ) AND (
-              status = ? AND
-              status4k = ? AND
-              ratingKey = ? AND
-              part = ?
-            )`,
-            [MediaType.TV, MediaStatus.UNKNOWN, MediaStatus.UNKNOWN, '', '']
-          );
+            this.log('🔍 Fetching season IDs...');
+            const seasonIdList = await seasonRepository
+              .createQueryBuilder('season')
+              .select('season.id', 'id')
+              .where('season.mediaId IN (:...mediaIds)', {
+                mediaIds: mediaIdList,
+              })
+              .getRawMany()
+              .then((rows) => rows.map((row) => row.id));
+            this.log(`🆔 Season IDs: ${JSON.stringify(seasonIdList)}`);
 
-          this.log(
-            `✅ Updated media: ${mediaUpdated.count}/${mediaToUpdate.count}`
-          );
-          this.log(
-            `✅ Updated seasons: ${seasonUpdated.count}/${seasonToUpdate.count}`
-          );
-          this.log(
-            `✅ Updated episodes: ${episodeUpdated.count}/${episodeToUpdate.count}`
-          );
-          this.log(`🎉 All updates completed successfully!`);
+            if (seasonIdList.length > 0) {
+              this.log('🔄 Updating episodes...');
+              await episodeRepository
+                .createQueryBuilder()
+                .update(Episode)
+                .set({
+                  status: MediaStatus.DISABLED,
+                  status4k: MediaStatus.DISABLED,
+                  ratingKey: null,
+                  ratingKey4k: null,
+                  part: null,
+                })
+                .where('seasonId IN (:...seasonIds)', {
+                  seasonIds: seasonIdList.length ? seasonIdList : [0],
+                })
+                .andWhere(
+                  '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL OR part IS NOT NULL)',
+                  { statusValues }
+                )
+                .execute();
+              this.log('✅ Episodes update complete');
+            }
+          }
 
           await queryRunner.commitTransaction();
         } catch (error) {
-          this.log(`❌ Error updating media status: ${error}`);
+          this.log(`[ERROR] Failed to update`);
           await queryRunner.rollbackTransaction();
         } finally {
           await queryRunner.release();
         }
       }
+
       const admin = await userRepository.findOne({
         select: { id: true, plexToken: true },
         where: { id: 1 },
@@ -429,12 +370,23 @@ class PlexScanner
     const has4k = plexitem.Media.some(
       (media) => media.videoResolution === '4k'
     );
+    const metadata = await this.plexClient.getMetadata(plexitem.ratingKey);
 
     await this.processMovie(mediaIds.tmdbId, {
       is4k: has4k && this.enable4kMovie,
       mediaAddedAt: new Date(plexitem.addedAt * 1000),
       ratingKey: plexitem.ratingKey,
       title: plexitem.title,
+      part: JSON.stringify(
+        plexitem.Media.flatMap((media) =>
+          media.Part.map((part) => ({
+            file: part.file,
+            key: `${plexitem.ratingKey}`,
+            library: `${metadata.librarySectionTitle ?? ''}`,
+            size: part.size,
+          }))
+        )
+      ),
     });
   }
 
@@ -451,6 +403,18 @@ class PlexScanner
       mediaAddedAt: new Date(plexitem.addedAt * 1000),
       ratingKey: plexitem.ratingKey,
       title: plexitem.title,
+      part: JSON.stringify(
+        plexitem.Media.flatMap((media) =>
+          media.Part.map((part) => ({
+            file: part.file,
+            key: `${plexitem.ratingKey}`,
+            library: `${plexitem.librarySectionTitle ?? ''}`,
+            size: part.size,
+            videoResolution: media.videoResolution,
+            container: media.videoResolution,
+          }))
+        )
+      ),
     });
   }
 
@@ -531,18 +495,22 @@ class PlexScanner
                 part: JSON.stringify(
                   plexEpisode.Media.flatMap((media) =>
                     media.Part.map((part) => ({
-                      file: part.file,
-                      key: `${plexitem.ratingKey}, ${matchedPlexSeason.ratingKey}, ${plexEpisode.ratingKey}`,
-                      library: `${metadata.librarySectionTitle ?? ''}`,
-                      size: part.size,
+                      file: part.file as string,
+                      key: `${plexitem.ratingKey}, ${matchedPlexSeason.ratingKey}, ${plexEpisode.ratingKey}` as string,
+                      library: `${
+                        metadata.librarySectionTitle ?? ''
+                      }` as string,
+                      size: part.size as number,
+                      videoResolution: media.videoResolution,
+                      container: part.container,
                     }))
                   )
                 ),
               }
             : {
                 episodeNumber: episode.episode_number,
-                ratingKey: '',
-                part: '[]',
+                ratingKey: null,
+                part: null,
               };
         });
         const episodeFilterResults = await Promise.all(
@@ -570,7 +538,7 @@ class PlexScanner
 
         processableSeasons.push({
           seasonNumber: season.season_number,
-          ratingKey: matchedPlexSeason?.ratingKey ?? '',
+          ratingKey: matchedPlexSeason?.ratingKey ?? null,
           episodes: totalStandard,
           episodes4k: total4k,
           totalEpisodes: episodeFilterResults.filter(Boolean).length,
@@ -579,8 +547,8 @@ class PlexScanner
       } else {
         const allEpisodes = tvShowSeason.episodes.map((episode) => ({
           episodeNumber: episode.episode_number,
-          ratingKey: '',
-          part: '[]',
+          ratingKey: null,
+          part: null,
         }));
         const episodeFilterResults = await Promise.all(
           tvShowSeason.episodes.map(async (episode) => {
@@ -607,7 +575,7 @@ class PlexScanner
 
         processableSeasons.push({
           seasonNumber: season.season_number,
-          ratingKey: '',
+          ratingKey: null,
           episodes: 0,
           episodes4k: 0,
           totalEpisodes: episodeFilterResults.filter(Boolean).length,

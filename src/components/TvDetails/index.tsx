@@ -44,7 +44,6 @@ import {
   EyeSlashIcon,
   FilmIcon,
   MinusCircleIcon,
-  PlayIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
 import { ChevronDownIcon, FolderOpenIcon } from '@heroicons/react/24/solid';
@@ -83,9 +82,10 @@ const messages = defineMessages('components.TvDetails', {
   anime: 'Anime',
   network: '{networkCount, plural, one {Network} other {Networks}}',
   viewfullcrew: 'View Full Crew',
-  play: 'Play on {mediaServerName}',
-  open: 'Open on {mediaServerName}',
-  play4k: 'Play 4K on {mediaServerName}',
+  play: 'Play on {mediaServerName} ({libraryName})',
+  open: 'Open in {mediaServerName} ({libraryName})',
+  play4k: 'Play 4K on {mediaServerName} ({libraryName})',
+  open4k: 'Open 4K in {mediaServerName} ({libraryName})',
   seasons: '{seasonCount, plural, one {# Season} other {# Seasons}}',
   episodeRuntime: 'Episode Runtime',
   episodeRuntimeMinutes: '{runtime} minutes',
@@ -111,6 +111,15 @@ const messages = defineMessages('components.TvDetails', {
 
 interface TvDetailsProps {
   tv?: TvDetailsType;
+}
+
+interface MediaFile {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
 }
 
 const TvDetails = ({ tv }: TvDetailsProps) => {
@@ -179,33 +188,6 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   }
 
   const mediaLinks: PlayButtonLink[] = [];
-
-  if (
-    deepLinks.mediaUrl &&
-    hasPermission([Permission.REQUEST, Permission.REQUEST_TV], {
-      type: 'or',
-    })
-  ) {
-    mediaLinks.push({
-      text: getAvailableMediaServerName(),
-      url: deepLinks.mediaUrl,
-      svg: <PlayIcon />,
-    });
-  }
-
-  if (
-    settings.currentSettings.series4kEnabled &&
-    deepLinks.mediaUrl4k &&
-    hasPermission([Permission.REQUEST_4K, Permission.REQUEST_4K_TV], {
-      type: 'or',
-    })
-  ) {
-    mediaLinks.push({
-      text: getAvailable4kMediaServerName(),
-      url: deepLinks.mediaUrl4k,
-      svg: <PlayIcon />,
-    });
-  }
 
   const trailerUrl = data.relatedVideos
     ?.filter((r) => r.type === 'Trailer')
@@ -322,34 +304,32 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       (provider) => provider.iso_3166_1 === streamingRegion
     )?.flatrate ?? [];
 
-  function getAvailableMediaServerName(library = '') {
+  function getAvailableMediaServerName(library = '', tautulliUrl = false) {
+    if (tautulliUrl) {
+      return intl.formatMessage(library ? messages.open : messages.play, {
+        libraryName: library,
+        mediaServerName: 'Tautulli',
+      });
+    }
+
     if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
       return intl.formatMessage(library ? messages.open : messages.play, {
-        mediaServerName: library ?? 'Emby',
+        libraryName: library,
+        mediaServerName: 'Emby',
       });
     }
 
     if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
       return intl.formatMessage(library ? messages.open : messages.play, {
-        mediaServerName: library ?? 'Plex',
+        libraryName: library,
+        mediaServerName: 'Plex',
       });
     }
 
     return intl.formatMessage(library ? messages.open : messages.play, {
-      mediaServerName: library ?? 'Jellyfin',
+      libraryName: library,
+      mediaServerName: 'Jellyfin',
     });
-  }
-
-  function getAvailable4kMediaServerName() {
-    if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Emby' });
-    }
-
-    if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
-      return intl.formatMessage(messages.play4k, { mediaServerName: 'Plex' });
-    }
-
-    return intl.formatMessage(messages.play, { mediaServerName: 'Jellyfin' });
   }
 
   const onClickWatchlistBtn = async (): Promise<void> => {
@@ -482,67 +462,127 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     type: 'or',
   });
 
-  const firstSeasonFile = data.mediaInfo?.seasons
-    ?.flatMap((season) => season.episodes ?? []) // รวมทุกตอนจากทุกซีซัน
-    ?.find((episode) => episode.part && episode.part !== '[]')?.part;
+  const allSeasonFiles =
+    data.mediaInfo?.seasons?.flatMap(
+      (season) =>
+        season.episodes?.flatMap((episode) => {
+          const parts = episode.part ? JSON.parse(episode.part) : [];
 
-  const parsedMainFiles = firstSeasonFile ? JSON.parse(firstSeasonFile) : [];
+          return parts.map(
+            (file: { file: string; key: string; library: string }) => {
+              const extractTag = (regex: RegExp, text: string) => {
+                const matches = [...text.matchAll(regex)];
+                return matches.length > 0
+                  ? matches[matches.length - 1][1]
+                  : null;
+              };
 
-  const mediaLinksOpen: OpenButtonLink[] = [];
+              return {
+                file: file.file,
+                keys: file.key.split(/\s*,\s*/), // แยก key ออกเป็น array
+                library: file.library,
+                editionText: extractTag(
+                  /{edition-([^}]+)}/g,
+                  file.file
+                )?.replace('edition-', ''),
+                audioText: extractTag(/\[Audio-([^\]]+)]/g, file.file),
+                subText: extractTag(/\[Sub-([^\]]+)]/g, file.file),
+              };
+            }
+          );
+        }) ?? []
+    ) ?? [];
 
-  if (deepLinks?.mediaUrl) {
-    const mediaUrls = deepLinks.mediaUrl
-      .split(/\s*,\s*/)
-      .map((url) => url.trim());
-
-    mediaUrls.forEach((url) => {
-      // ดึง ratingKey จาก mediaUrl
-      const urlMatch = url.match(/metadata%2F(\d+)/);
+  // 🔥 ฟังก์ชันลดโค้ดซ้ำ
+  const generateMediaLinks = (
+    urls: string,
+    targetArray: OpenButtonLink[],
+    files: MediaFile[],
+    tautulliUrl = false
+  ) => {
+    urls.split(/\s*,\s*/).forEach((url) => {
+      const urlMatch = url.match(
+        tautulliUrl ? /rating_key=(\d+)/ : /metadata%2F(\d+)/
+      );
       const urlRatingKey = urlMatch ? urlMatch[1] : '';
 
-      // หาไฟล์ที่มี ratingKey ตรงกัน
-      const matchingFile = parsedMainFiles.find((file: { key: string }) =>
-        file.key.split(/\s*,\s*/).includes(urlRatingKey)
+      const matchingFiles = files.filter((file) =>
+        file.keys.includes(urlRatingKey)
       );
 
-      const selectedFile = matchingFile?.file || '';
+      const uniqueLibraries = [
+        ...new Set(matchingFiles.map((file) => file.library)),
+      ];
+      const uniqueEditions = [
+        ...new Set(
+          matchingFiles.map((file) => file.editionText).filter(Boolean)
+        ),
+      ];
+      const uniqueAudio = [
+        ...new Set(
+          matchingFiles
+            .flatMap((file) => file.audioText?.split(', ') || [])
+            .filter(Boolean)
+        ),
+      ].join(', ');
+      const uniqueSub = [
+        ...new Set(
+          matchingFiles
+            .flatMap((file) => file.subText?.split(', ') || [])
+            .filter(Boolean)
+        ),
+      ].join(', ');
 
-      // Find [edition-*]
-      const editionMatch = [...selectedFile.matchAll(/\[(edition-[^\]]+)]/g)];
+      const editionIcons: Record<string, string> = {
+        '4K': '🔆 4K',
+        Extended: '🎬 Extended',
+        Remaster: '✨ Remaster',
+        "Director's Cut": "🎥 Director's Cut",
+        IMAX: '📽️ IMAX',
+      };
+
       const editionText =
-        editionMatch.length > 0
-          ? editionMatch[editionMatch.length - 1][1].replace('edition-', '')
-          : null;
+        uniqueEditions?.length > 0 && uniqueEditions[0]
+          ? editionIcons[uniqueEditions[0]] || uniqueEditions[0]
+          : '';
 
-      // Find [Audio-*] and [Sub-*]
-      const audioMatch = [...selectedFile.matchAll(/\[Audio-([^\]]+)]/g)];
-      const audioText =
-        audioMatch.length > 0
-          ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
-          : null;
+      const extractedText = [
+        uniqueAudio && `🔊 Audio: ${uniqueAudio}`,
+        uniqueSub && `📝 Sub: ${uniqueSub}`,
+      ]
+        .filter(Boolean)
+        .join(' / ');
 
-      const subMatch = [...selectedFile.matchAll(/\[Sub-([^\]]+)]/g)];
-      const subText =
-        subMatch.length > 0
-          ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
-          : null;
+      const tooltipText =
+        extractedText + (editionText ? ` {${editionText} Edition}` : '');
 
-      // sort by: edition > (Audio + Sub)
-      let extractedText = editionText || null;
-
-      if (!extractedText) {
-        extractedText =
-          [audioText, subText].filter(Boolean).join(' / ') || 'Unknown';
-      }
-
-      mediaLinksOpen.push({
-        text: getAvailableMediaServerName(matchingFile?.library),
-        tooltip: extractedText,
+      targetArray.push({
+        text: getAvailableMediaServerName(uniqueLibraries[0], tautulliUrl),
+        tooltip: tooltipText || 'Unknown',
         url: url,
         svg: <FolderOpenIcon />,
       });
     });
-  }
+  };
+
+  const mediaLinksOpen: OpenButtonLink[] = [];
+  const media4kLinksOpen: OpenButtonLink[] = [];
+
+  // 🔥 เรียกใช้ฟังก์ชันแทนโค้ดซ้ำ
+  if (deepLinks?.mediaUrl)
+    generateMediaLinks(
+      deepLinks.mediaUrl,
+      mediaLinksOpen,
+      allSeasonFiles,
+      false
+    );
+  if (deepLinks?.mediaUrl4k)
+    generateMediaLinks(
+      deepLinks.mediaUrl4k,
+      media4kLinksOpen,
+      allSeasonFiles,
+      false
+    );
 
   return (
     <div
@@ -606,7 +646,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
           });
         }}
         revalidate={() => revalidate()}
+        allFiles={allSeasonFiles}
         show={showManager}
+        generateMediaLinks={generateMediaLinks}
       />
       <div className="media-header">
         <div className="media-poster">
@@ -634,7 +676,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               inProgress={(data.mediaInfo?.downloadStatus ?? []).length > 0}
               tmdbId={data.mediaInfo?.tmdbId}
               mediaType="tv"
-              plexUrl={deepLinks.mediaUrl}
+              plexUrl={
+                deepLinks.mediaUrl?.split(/\s*,\s*/).map((url) => url.trim())[0]
+              }
               serviceUrl={data.mediaInfo?.serviceUrl}
             />
             {settings.currentSettings.series4kEnabled &&
@@ -658,7 +702,11 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   }
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="tv"
-                  plexUrl={deepLinks.mediaUrl4k}
+                  plexUrl={
+                    deepLinks.mediaUrl4k
+                      ?.split(/\s*,\s*/)
+                      .map((url) => url.trim())[0]
+                  }
                   serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
               )}
@@ -744,7 +792,12 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               </>
             )}
           <PlayButton links={mediaLinks} />
-          <OpenButton links={mediaLinksOpen} className="ml-2" />
+          <OpenButton links={mediaLinksOpen} className="ml-2 px-2" />
+          <OpenButton
+            links={media4kLinksOpen}
+            className="ml-2 px-2"
+            is4k={true}
+          />
           <RequestButton
             mediaType="tv"
             onUpdate={() => revalidate()}
@@ -932,78 +985,34 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 const seasonData = data.mediaInfo?.seasons?.find(
                   (e) => e.seasonNumber === season.seasonNumber
                 );
-                const seasonFile = seasonData?.episodes?.find(
-                  (episode) => episode.part && episode.part !== '[]'
-                )?.part;
 
-                const parsedFiles = seasonFile ? JSON.parse(seasonFile) : [];
+                const seasonFiles = allSeasonFiles.filter((file) =>
+                  seasonData?.episodes?.some(
+                    (e) =>
+                      e.part &&
+                      JSON.parse(e.part).some((f: { key: string }) =>
+                        f.key.split(/\s*,\s*/).includes(file.keys[0])
+                      )
+                  )
+                );
 
                 const mediaSeasonLinks: OpenButtonLink[] = [];
+                const media4kSeasonLinks: OpenButtonLink[] = [];
 
-                if (seasonLinks?.mediaUrl) {
-                  const mediaUrls = seasonLinks.mediaUrl
-                    .split(/\s*,\s*/)
-                    .map((url) => url.trim());
-
-                  mediaUrls.forEach((url) => {
-                    // ดึง ratingKey จาก mediaUrl
-                    const urlMatch = url.match(/metadata%2F(\d+)/);
-                    const urlRatingKey = urlMatch ? urlMatch[1] : '';
-
-                    // หาไฟล์ที่มี ratingKey ตรงกัน
-                    const matchingFile = parsedFiles.find(
-                      (file: { key: string }) =>
-                        file.key.split(/\s*,\s*/).includes(urlRatingKey)
-                    );
-
-                    const selectedFile = matchingFile?.file || '';
-
-                    // Find [edition-*]
-                    const editionMatch = [
-                      ...selectedFile.matchAll(/\[(edition-[^\]]+)]/g),
-                    ];
-                    const editionText =
-                      editionMatch.length > 0
-                        ? editionMatch[editionMatch.length - 1][1].replace(
-                            'edition-',
-                            ''
-                          )
-                        : null;
-
-                    // Find [Audio-*] and [Sub-*]
-                    const audioMatch = [
-                      ...selectedFile.matchAll(/\[Audio-([^\]]+)]/g),
-                    ];
-                    const audioText =
-                      audioMatch.length > 0
-                        ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
-                        : null;
-
-                    const subMatch = [
-                      ...selectedFile.matchAll(/\[Sub-([^\]]+)]/g),
-                    ];
-                    const subText =
-                      subMatch.length > 0
-                        ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
-                        : null;
-
-                    // sort by: edition > (Audio + Sub)
-                    let extractedText = editionText || null;
-
-                    if (!extractedText) {
-                      extractedText =
-                        [audioText, subText].filter(Boolean).join(' / ') ||
-                        'Unknown';
-                    }
-
-                    mediaSeasonLinks.push({
-                      text: getAvailableMediaServerName(matchingFile?.library),
-                      tooltip: extractedText,
-                      url: url,
-                      svg: <FolderOpenIcon />,
-                    });
-                  });
-                }
+                if (seasonLinks?.mediaUrl)
+                  generateMediaLinks(
+                    seasonLinks.mediaUrl,
+                    mediaSeasonLinks,
+                    seasonFiles,
+                    false
+                  );
+                if (seasonLinks?.mediaUrl4k)
+                  generateMediaLinks(
+                    seasonLinks.mediaUrl4k,
+                    media4kSeasonLinks,
+                    seasonFiles,
+                    false
+                  );
 
                 return (
                   <Disclosure key={`season-discoslure-${season.seasonNumber}`}>
@@ -1043,6 +1052,25 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                     : season.episodeCount,
                                 })}
                               </Badge>
+                              {!!season.voteAverage && (
+                                <Tooltip
+                                  content={intl.formatMessage(
+                                    messages.tmdbuserscore
+                                  )}
+                                >
+                                  <a
+                                    href={`https://www.themoviedb.org/tv/${data.id}/season/${season.seasonNumber}?language=${locale}`}
+                                    className="media-rating"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <TmdbLogo className="mr-1 w-6" />
+                                    <span>
+                                      {Math.round(season.voteAverage * 10)}%
+                                    </span>
+                                  </a>
+                                </Tooltip>
+                              )}
                             </div>
                             {((!mSeason &&
                               request?.status ===
@@ -1243,7 +1271,15 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                               } h-6 w-6 text-gray-500`}
                             />
                           </Disclosure.Button>
-                          <OpenButton links={mediaSeasonLinks} />
+                          <OpenButton
+                            links={mediaSeasonLinks}
+                            className="button-sm w-full py-0 px-2"
+                          />
+                          <OpenButton
+                            links={media4kSeasonLinks}
+                            className="button-sm w-full py-0 px-2"
+                            is4k={true}
+                          />
                         </div>
                         <Transition
                           show={open}
@@ -1259,17 +1295,11 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                           <Disclosure.Panel className="w-full rounded-b-md border-b border-l border-r border-gray-700 px-4 pb-2">
                             <Season
                               tv={data}
-                              season={
-                                data?.mediaInfo?.seasons.find(
-                                  (s) => s.seasonNumber === season.seasonNumber
-                                ) ?? null
-                              }
-                              ignore={
-                                data?.mediaInfo?.status !== MediaStatus.UNKNOWN
-                              }
                               episodeLink={seasonLinks?.episodes}
                               seasonNumber={season.seasonNumber}
                               onUpdate={() => revalidate()}
+                              allSeasonFiles={allSeasonFiles}
+                              generateMediaLinks={generateMediaLinks}
                             />
                           </Disclosure.Panel>
                         </Transition>

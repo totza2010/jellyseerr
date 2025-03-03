@@ -2,6 +2,7 @@ import BlacklistBlock from '@app/components/BlacklistBlock';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
+import type { OpenButtonLink } from '@app/components/Common/OpenButton';
 import SlideOver from '@app/components/Common/SlideOver';
 import Tooltip from '@app/components/Common/Tooltip';
 import DownloadBlock from '@app/components/DownloadBlock';
@@ -75,17 +76,45 @@ interface ManageSlideOverProps {
   show?: boolean;
   onClose: () => void;
   revalidate: () => void;
+  generateMediaLinks: (
+    urls: string,
+    targetArray: OpenButtonLink[],
+    seasonFiles: MediaFile[],
+    tautulliUrl: boolean
+  ) => void;
 }
 
 interface ManageSlideOverMovieProps extends ManageSlideOverProps {
   mediaType: 'movie';
   data: MovieDetails;
+  allFiles: File[];
 }
 
 interface ManageSlideOverTvProps extends ManageSlideOverProps {
   mediaType: 'tv';
   data: TvDetails;
+  allFiles: File[];
 }
+
+interface MediaFile {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
+}
+
+type File = {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
+  uniqueAudio: string;
+  uniqueSub: string;
+};
 
 const ManageSlideOver = ({
   show,
@@ -93,6 +122,8 @@ const ManageSlideOver = ({
   onClose,
   data,
   revalidate,
+  generateMediaLinks,
+  allFiles,
 }: ManageSlideOverMovieProps | ManageSlideOverTvProps) => {
   const { user: currentUser, hasPermission } = useUser();
   const intl = useIntl();
@@ -202,56 +233,24 @@ const ManageSlideOver = ({
     );
   };
 
-  const firstSeasonFile = data.mediaInfo?.seasons
-    ?.flatMap((season) => season.episodes ?? []) // รวมทุกตอนจากทุกซีซัน
-    ?.find((episode) => episode.part && episode.part !== '[]')?.part;
+  const tautulliUrls: OpenButtonLink[] = [];
+  const tautulliUrls4k: OpenButtonLink[] = [];
 
-  const parsedMainFiles = firstSeasonFile ? JSON.parse(firstSeasonFile) : [];
+  if (data.mediaInfo?.tautulliUrl)
+    generateMediaLinks(
+      data.mediaInfo?.tautulliUrl,
+      tautulliUrls,
+      allFiles,
+      true
+    );
+  if (data.mediaInfo?.tautulliUrl4k)
+    generateMediaLinks(
+      data.mediaInfo?.tautulliUrl4k,
+      tautulliUrls4k,
+      allFiles,
+      true
+    );
 
-  const tautulliUrls =
-    data.mediaInfo?.tautulliUrl?.split(/\s*,\s*/).map((url) => {
-      const urlMatch = url.match(/rating_key=(\d+)/);
-      const urlRatingKey = urlMatch ? urlMatch[1] : '';
-
-      // หาไฟล์ที่มี ratingKey ตรงกัน
-      const matchingFile = parsedMainFiles.find((file: { key: string }) =>
-        file.key.split(/\s*,\s*/).includes(urlRatingKey)
-      );
-
-      const selectedFile = matchingFile?.file || '';
-
-      // หา edition, audio, sub
-      const editionMatch = [...selectedFile.matchAll(/\[(edition-[^\]]+)]/g)];
-      const editionText =
-        editionMatch.length > 0
-          ? editionMatch[editionMatch.length - 1][1].replace('edition-', '')
-          : null;
-
-      const audioMatch = [...selectedFile.matchAll(/\[Audio-([^\]]+)]/g)];
-      const audioText =
-        audioMatch.length > 0
-          ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
-          : null;
-
-      const subMatch = [...selectedFile.matchAll(/\[Sub-([^\]]+)]/g)];
-      const subText =
-        subMatch.length > 0
-          ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
-          : null;
-
-      // sort by: edition > (Audio + Sub)
-      let extractedText = editionText || null;
-      if (!extractedText) {
-        extractedText =
-          [audioText, subText].filter(Boolean).join(' / ') || 'Unknown';
-      }
-
-      return {
-        url,
-        text: matchingFile?.library || 'Unknown Library',
-        tooltip: extractedText,
-      };
-    }) || [];
   const hasIgnoredEpisode =
     ignoreData.length > 0 ||
     data.mediaInfo?.seasons?.some((season) =>
@@ -459,7 +458,8 @@ const ManageSlideOver = ({
                         )}
                       </div>
                     )}
-                    {tautulliUrls.length > 0 &&
+                    {tautulliUrls &&
+                      tautulliUrls.length > 0 &&
                       tautulliUrls.map(({ url, text, tooltip }, index) => (
                         <Tooltip key={url} content={tooltip}>
                           <a href={url} target="_blank" rel="noreferrer">
@@ -470,13 +470,9 @@ const ManageSlideOver = ({
                                   ? 'rounded-t-none'
                                   : 'rounded-t-none rounded-b-none'
                               }`}
-                              title={tooltip}
                             >
                               <Bars4Icon />
-                              <span>
-                                {intl.formatMessage(messages.opentautulli)}{' '}
-                                {text}
-                              </span>
+                              <span>{text}</span>
                             </Button>
                           </a>
                         </Tooltip>
@@ -624,25 +620,25 @@ const ManageSlideOver = ({
                         )}
                       </div>
                     )}
-                    {data.mediaInfo?.tautulliUrl4k && (
-                      <a
-                        href={data.mediaInfo.tautulliUrl4k}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <Button
-                          buttonType="ghost"
-                          className={`w-full ${
-                            watchData?.data4k ? 'rounded-t-none' : ''
-                          }`}
-                        >
-                          <Bars4Icon />
-                          <span>
-                            {intl.formatMessage(messages.opentautulli)}
-                          </span>
-                        </Button>
-                      </a>
-                    )}
+                    {tautulliUrls4k &&
+                      tautulliUrls4k.length > 0 &&
+                      tautulliUrls4k.map(({ url, text, tooltip }, index) => (
+                        <Tooltip key={url} content={tooltip}>
+                          <a href={url} target="_blank" rel="noreferrer">
+                            <Button
+                              buttonType="ghost"
+                              className={`w-full ${
+                                index === tautulliUrls4k.length - 1
+                                  ? 'rounded-t-none'
+                                  : 'rounded-t-none rounded-b-none'
+                              }`}
+                            >
+                              <Bars4Icon />
+                              <span>{text}</span>
+                            </Button>
+                          </a>
+                        </Tooltip>
+                      ))}
                   </div>
                 )}
                 {data?.mediaInfo?.serviceUrl4k && (

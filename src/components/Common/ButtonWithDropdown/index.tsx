@@ -61,7 +61,9 @@ const ButtonWithDropdown = ({
       className?.includes('button-sm') ? 'button-sm' : 'button-md'
     } text-white border ${
       className?.includes('w-full') ? 'w-full' : 'h-full'
-    } ${className?.includes('py-0') ? 'py-0' : 'py-2'}`,
+    } ${className?.includes('py-0') ? 'py-0' : 'py-2'} ${
+      className?.includes('px-2') ? 'px-2' : 'px-4'
+    }`,
     dropdownSideButtonClasses: `${
       className?.includes('button-sm') ? 'button-sm' : 'button-md'
     } border`,
@@ -91,7 +93,7 @@ const ButtonWithDropdown = ({
     <Menu as="div" className="relative inline-flex h-full rounded-md shadow-sm">
       <TriggerElement
         type="button"
-        className={`relative z-10 inline-flex items-center px-4 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
+        className={`relative z-10 inline-flex items-center text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
           styleClasses.mainButtonClasses
         } ${children ? 'rounded-l-md' : 'rounded-md'} ${className}`}
         {...(props as Record<string, string>)}

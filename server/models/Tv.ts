@@ -48,6 +48,7 @@ interface Season {
   overview: string;
   posterPath?: string;
   seasonNumber: number;
+  voteAverage: number;
 }
 
 export interface SeasonWithEpisodes extends Omit<Season, 'episodeCount'> {
@@ -124,7 +125,7 @@ const mapEpisodeResult = (episode: TmdbTvEpisodeResult): Episode => ({
   seasonNumber: episode.season_number,
   showId: episode.show_id,
   voteAverage: episode.vote_average,
-  voteCount: episode.vote_cuont,
+  voteCount: episode.vote_count,
   stillPath: episode.still_path,
 });
 
@@ -135,6 +136,7 @@ const mapSeasonResult = (season: TmdbTvSeasonResult): Season => ({
   name: season.name,
   overview: season.overview,
   seasonNumber: season.season_number,
+  voteAverage: season.vote_average,
   posterPath: season.poster_path,
 });
 
@@ -148,6 +150,7 @@ export const mapSeasonWithEpisodes = (
   name: season.name,
   overview: season.overview,
   seasonNumber: season.season_number,
+  voteAverage: season.vote_average,
   posterPath: season.poster_path,
 });
 

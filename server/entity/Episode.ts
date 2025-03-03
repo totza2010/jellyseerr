@@ -4,7 +4,6 @@ import { Ignore } from '@server/entity/Ignore';
 import { getSettings } from '@server/lib/settings';
 import {
   AfterLoad,
-  AfterUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -26,11 +25,17 @@ class Episode {
   @Column({ nullable: true, type: 'varchar' })
   public ratingKey?: string | null;
 
+  @Column({ nullable: true, type: 'varchar' })
+  public ratingKey4k?: string | null;
+
   public mediaUrl?: string;
+  public mediaUrl4k?: string;
 
   public iOSPlexUrl?: string;
+  public iOSPlexUrl4k?: string;
 
   public tautulliUrl?: string;
+  public tautulliUrl4k?: string;
 
   @Column({ type: 'int', default: MediaStatus.UNKNOWN })
   public status: MediaStatus;
@@ -39,7 +44,7 @@ class Episode {
   public status4k: MediaStatus;
 
   @Column({ type: 'text', nullable: true })
-  public part?: string;
+  public part?: string | null;
 
   @ManyToOne(() => Season, (season) => season.episodes, {
     onDelete: 'CASCADE',
@@ -63,6 +68,7 @@ class Episode {
   public setPlexUrls(): void {
     const { machineId, webAppUrl } = getSettings().plex;
     const { externalUrl: tautulliUrl } = getSettings().tautulli;
+    const { externalUrl: tautulliUrl4k } = getSettings().tautulli;
 
     if (getSettings().main.mediaServerType === MediaServerType.PLEX) {
       if (this.ratingKey) {
@@ -92,12 +98,35 @@ class Episode {
             .join(', ');
         }
       }
-    }
-  }
 
-  @AfterUpdate()
-  public updatePlexUrls(): void {
-    this.setPlexUrls();
+      if (this.ratingKey4k) {
+        const ratingKeys4k = this.ratingKey4k
+          .split(/\s*,\s*/)
+          .map((key) => key.trim());
+
+        this.mediaUrl4k = ratingKeys4k
+          .map(
+            (key) =>
+              `${
+                webAppUrl ? webAppUrl : 'https://app.plex.tv/desktop'
+              }#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${key}`
+          )
+          .join(', ');
+
+        this.iOSPlexUrl4k = ratingKeys4k
+          .map(
+            (key) =>
+              `plex://preplay/?metadataKey=%2Flibrary%2Fmetadata%2F${key}&server=${machineId}`
+          )
+          .join(', ');
+
+        if (tautulliUrl4k) {
+          this.tautulliUrl4k = ratingKeys4k
+            .map((key) => `${tautulliUrl4k}/info?rating_key=${key}`)
+            .join(', ');
+        }
+      }
+    }
   }
 }
 

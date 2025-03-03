@@ -1,9 +1,7 @@
 import { MediaStatus } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
-import Episode from '@server/entity/Episode';
 import { Ignore } from '@server/entity/Ignore';
 import Media from '@server/entity/Media';
-import Season from '@server/entity/Season';
 import type { IgnoreResultsResponse } from '@server/interfaces/api/ignoreInterfaces';
 import { Permission } from '@server/lib/permissions';
 import logger from '@server/logger';
@@ -173,113 +171,84 @@ ignoreRoutes.delete(
 
       if (!episode) return;
 
-      const episodeRepository = getRepository(Episode);
-
-      episode.status =
-        episode.part === '[]' &&
-        episode.ratingKey === '' &&
-        (season.status === MediaStatus.AVAILABLE ||
-          season.status === MediaStatus.PARTIALLY_AVAILABLE)
-          ? MediaStatus.MISSING
-          : MediaStatus.UNKNOWN;
-      episode.status4k =
-        episode.part === '[]' &&
-        episode.ratingKey === '' &&
-        (season.status4k === MediaStatus.AVAILABLE ||
-          season.status4k === MediaStatus.PARTIALLY_AVAILABLE)
+      const episodeStatus =
+        episode.part && episode.ratingKey
+          ? MediaStatus.AVAILABLE
+          : season.episodes.some((s) => s.ratingKey)
           ? MediaStatus.MISSING
           : MediaStatus.UNKNOWN;
 
-      await episodeRepository.save(episode);
+      const episodeStatus4k =
+        episode.part && episode.ratingKey
+          ? MediaStatus.AVAILABLE
+          : season.episodes.some((s) => s.ratingKey)
+          ? MediaStatus.MISSING
+          : MediaStatus.UNKNOWN;
 
-      const seasonRepository = getRepository(Season);
+      episode.status = episodeStatus;
+      episode.status4k = episodeStatus4k;
 
-      const season2 = await seasonRepository.findOne({
-        where: {
-          media: { id: media?.id },
-          seasonNumber: req.body.seasonNumber,
-        },
-      });
-
-      if (!season2) return;
-
-      season2.status = season2.episodes.some(
-        (episode) => episode.status === MediaStatus.MISSING
+      season.status = season.episodes.some(
+        (e) => e.status === MediaStatus.MISSING
       )
         ? MediaStatus.PARTIALLY_AVAILABLE
-        : season2.episodes.every(
-            (episode) => episode.status === MediaStatus.UNKNOWN
-          )
+        : season.episodes.every((e) => e.status === MediaStatus.UNKNOWN)
         ? MediaStatus.UNKNOWN
-        : season2.status;
-      season2.status4k = season2.episodes.some(
-        (episode) => episode.status4k === MediaStatus.MISSING
+        : season.status;
+      season.status4k = season.episodes.some(
+        (e) => e.status4k === MediaStatus.MISSING
       )
         ? MediaStatus.PARTIALLY_AVAILABLE
-        : season2.episodes.every(
-            (episode) => episode.status4k === MediaStatus.UNKNOWN
-          )
+        : season.episodes.every((e) => e.status4k === MediaStatus.UNKNOWN)
         ? MediaStatus.UNKNOWN
-        : season2.status4k;
-
-      await seasonRepository.save(season2);
-
-      const media2 = await mediaRepository.findOne({
-        where: {
-          tmdbId: req.body.tmdbId,
-        },
-      });
-
-      if (!media2) return;
+        : season.status4k;
 
       const isAllStandardSeasons =
-        media2.seasons.length &&
-        media2.seasons
-          .filter((season) => season.episodes.length > 0)
-          .every((season) =>
-            season.episodes
-              .filter((episode) => episode.status !== MediaStatus.IGNORED)
-              .every((episode) => episode.status === MediaStatus.AVAILABLE)
-          );
+        media.seasons.length &&
+        media.seasons
+          .filter(
+            (s) =>
+              s.episodes.filter((e) => e.status !== MediaStatus.IGNORED)
+                .length > 0
+          )
+          .every((s) => s.status === MediaStatus.AVAILABLE)
+          ? MediaStatus.AVAILABLE
+          : media.seasons.some(
+              (s) =>
+                s.status === MediaStatus.PARTIALLY_AVAILABLE ||
+                s.status === MediaStatus.MIXED_AVAILABILITY ||
+                s.status === MediaStatus.AVAILABLE
+            )
+          ? MediaStatus.PARTIALLY_AVAILABLE
+          : media.seasons.some((s) => s.status === MediaStatus.PROCESSING)
+          ? MediaStatus.PROCESSING
+          : MediaStatus.UNKNOWN;
 
       const isAll4kSeasons =
-        media2.seasons.length &&
-        media2.seasons
-          .filter((season) => season.episodes.length > 0)
-          .every((season) =>
-            season.episodes
-              .filter((episode) => episode.status4k !== MediaStatus.IGNORED)
-              .every((episode) => episode.status4k === MediaStatus.AVAILABLE)
-          );
+        media.seasons.length &&
+        media.seasons
+          .filter(
+            (s) =>
+              s.episodes.filter((e) => e.status4k !== MediaStatus.IGNORED)
+                .length > 0
+          )
+          .every((s) => s.status4k === MediaStatus.AVAILABLE)
+          ? MediaStatus.AVAILABLE
+          : media.seasons.some(
+              (s) =>
+                s.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
+                s.status4k === MediaStatus.MIXED_AVAILABILITY ||
+                s.status4k === MediaStatus.AVAILABLE
+            )
+          ? MediaStatus.PARTIALLY_AVAILABLE
+          : media.seasons.some((s) => s.status4k === MediaStatus.PROCESSING)
+          ? MediaStatus.PROCESSING
+          : MediaStatus.UNKNOWN;
 
-      media2.status = isAllStandardSeasons
-        ? MediaStatus.AVAILABLE
-        : media2.seasons.some(
-            (season) =>
-              season.status === MediaStatus.PARTIALLY_AVAILABLE ||
-              season.status === MediaStatus.AVAILABLE
-          )
-        ? MediaStatus.PARTIALLY_AVAILABLE
-        : media2.seasons.some(
-            (season) => season.status === MediaStatus.PROCESSING
-          )
-        ? MediaStatus.PROCESSING
-        : MediaStatus.UNKNOWN;
-      media2.status4k = isAll4kSeasons
-        ? MediaStatus.AVAILABLE
-        : media2.seasons.some(
-            (season) =>
-              season.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-              season.status4k === MediaStatus.AVAILABLE
-          )
-        ? MediaStatus.PARTIALLY_AVAILABLE
-        : media2.seasons.some(
-            (season) => season.status4k === MediaStatus.PROCESSING
-          )
-        ? MediaStatus.PROCESSING
-        : MediaStatus.UNKNOWN;
+      media.status = isAllStandardSeasons;
+      media.status4k = isAll4kSeasons;
 
-      await mediaRepository.save(media2);
+      await mediaRepository.save(media);
 
       return res.status(204).send();
     } catch (e) {

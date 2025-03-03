@@ -9,6 +9,8 @@ import BlacklistModal from '@app/components/BlacklistModal';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import type { OpenButtonLink } from '@app/components/Common/OpenButton';
+import OpenButton from '@app/components/Common/OpenButton';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { PlayButtonLink } from '@app/components/Common/PlayButton';
 import PlayButton from '@app/components/Common/PlayButton';
@@ -39,13 +41,13 @@ import {
   EyeSlashIcon,
   FilmIcon,
   MinusCircleIcon,
-  PlayIcon,
   StarIcon,
   TicketIcon,
 } from '@heroicons/react/24/outline';
 import {
   ChevronDoubleDownIcon,
   ChevronDoubleUpIcon,
+  FolderOpenIcon,
 } from '@heroicons/react/24/solid';
 import { type RatingResponse } from '@server/api/ratings';
 import { IssueStatus } from '@server/constants/issue';
@@ -83,6 +85,7 @@ const messages = defineMessages('components.MovieDetails', {
   downloadstatus: 'Download Status',
   play: 'Play on {mediaServerName}',
   play4k: 'Play 4K on {mediaServerName}',
+  open: 'Open on {mediaServerName}',
   markavailable: 'Mark as Available',
   mark4kavailable: 'Mark as Available in 4K',
   showmore: 'Show More',
@@ -109,6 +112,15 @@ const messages = defineMessages('components.MovieDetails', {
 
 interface MovieDetailsProps {
   movie?: MovieDetailsType;
+}
+
+interface MediaFile {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
 }
 
 const MovieDetails = ({ movie }: MovieDetailsProps) => {
@@ -180,32 +192,6 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
   const showAllStudios = data.productionCompanies.length <= minStudios + 1;
   const mediaLinks: PlayButtonLink[] = [];
 
-  if (
-    deepLinks.mediaUrl &&
-    hasPermission([Permission.REQUEST, Permission.REQUEST_MOVIE], {
-      type: 'or',
-    })
-  ) {
-    mediaLinks.push({
-      text: getAvailableMediaServerName(),
-      url: deepLinks.mediaUrl,
-      svg: <PlayIcon />,
-    });
-  }
-
-  if (
-    settings.currentSettings.movie4kEnabled &&
-    deepLinks.mediaUrl4k &&
-    hasPermission([Permission.REQUEST_4K, Permission.REQUEST_4K_MOVIE], {
-      type: 'or',
-    })
-  ) {
-    mediaLinks.push({
-      text: getAvailable4kMediaServerName(),
-      url: deepLinks.mediaUrl4k,
-      svg: <PlayIcon />,
-    });
-  }
   const trailerUrl = data.relatedVideos
     ?.filter((r) => r.type === 'Trailer')
     .sort((a, b) => a.size - b.size)
@@ -289,28 +275,22 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
       (provider) => provider.iso_3166_1 === streamingRegion
     )?.flatrate ?? [];
 
-  function getAvailableMediaServerName() {
+  function getAvailableMediaServerName(library = '') {
     if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Emby' });
+      return intl.formatMessage(library ? messages.open : messages.play, {
+        mediaServerName: library ?? 'Emby',
+      });
     }
 
     if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Plex' });
+      return intl.formatMessage(library ? messages.open : messages.play, {
+        mediaServerName: library ?? 'Plex',
+      });
     }
 
-    return intl.formatMessage(messages.play, { mediaServerName: 'Jellyfin' });
-  }
-
-  function getAvailable4kMediaServerName() {
-    if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
-      return intl.formatMessage(messages.play, { mediaServerName: 'Emby' });
-    }
-
-    if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
-      return intl.formatMessage(messages.play4k, { mediaServerName: 'Plex' });
-    }
-
-    return intl.formatMessage(messages.play4k, { mediaServerName: 'Jellyfin' });
+    return intl.formatMessage(library ? messages.open : messages.play, {
+      mediaServerName: library ?? 'Jellyfin',
+    });
   }
 
   const onClickWatchlistBtn = async (): Promise<void> => {
@@ -441,6 +421,120 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     type: 'or',
   });
 
+  const allMovieFiles = data.mediaInfo?.parts
+    ? JSON.parse(data.mediaInfo.parts).map(
+        (file: { file: string; key: string; library: string }) => {
+          const extractTag = (regex: RegExp, text: string) => {
+            const matches = [...text.matchAll(regex)];
+            return matches.length > 0 ? matches[matches.length - 1][1] : null;
+          };
+
+          return {
+            file: file.file,
+            keys: file.key.split(/\s*,\s*/), // แยก key ออกเป็น array
+            library: file.library,
+            editionText: extractTag(/{edition-([^}]+)}/g, file.file)?.replace(
+              'edition-',
+              ''
+            ),
+            audioText: extractTag(/\[Audio-([^\]]+)]/g, file.file),
+            subText: extractTag(/\[Sub-([^\]]+)]/g, file.file),
+          };
+        }
+      )
+    : [];
+
+  // 🔥 ฟังก์ชันลดโค้ดซ้ำ
+  const generateMediaLinks = (
+    urls: string,
+    targetArray: OpenButtonLink[],
+    files: MediaFile[],
+    tautulliUrl = false
+  ) => {
+    urls.split(/\s*,\s*/).forEach((url) => {
+      const urlMatch = url.match(
+        tautulliUrl ? /rating_key=(\d+)/ : /metadata%2F(\d+)/
+      );
+      const urlRatingKey = urlMatch ? urlMatch[1] : '';
+
+      const matchingFiles = files.filter((file) =>
+        file.keys.includes(urlRatingKey)
+      );
+
+      const uniqueLibraries = [
+        ...new Set(matchingFiles.map((file) => file.library)),
+      ];
+      const uniqueEditions = [
+        ...new Set(
+          matchingFiles.map((file) => file.editionText).filter(Boolean)
+        ),
+      ];
+      const uniqueAudio = [
+        ...new Set(
+          matchingFiles
+            .flatMap((file) => file.audioText?.split(', ') || [])
+            .filter(Boolean)
+        ),
+      ].join(', ');
+      const uniqueSub = [
+        ...new Set(
+          matchingFiles
+            .flatMap((file) => file.subText?.split(', ') || [])
+            .filter(Boolean)
+        ),
+      ].join(', ');
+
+      const editionIcons: Record<string, string> = {
+        '4K': '🔆 4K',
+        Extended: '🎬 Extended',
+        Remaster: '✨ Remaster',
+        "Director's Cut": "🎥 Director's Cut",
+        IMAX: '📽️ IMAX',
+      };
+
+      const editionText =
+        uniqueEditions?.length > 0 && uniqueEditions[0]
+          ? editionIcons[uniqueEditions[0]] || uniqueEditions[0]
+          : '';
+
+      const extractedText = [
+        uniqueAudio && `🔊 Audio: ${uniqueAudio}`,
+        uniqueSub && `📝 Sub: ${uniqueSub}`,
+      ]
+        .filter(Boolean)
+        .join(' / ');
+
+      const tooltipText =
+        extractedText + (editionText ? ` {${editionText} Edition}` : '');
+
+      targetArray.push({
+        text: getAvailableMediaServerName(uniqueLibraries[0]),
+        tooltip: tooltipText || 'Unknown',
+        url: url,
+        svg: <FolderOpenIcon />,
+      });
+    });
+  };
+
+  const mediaLinksOpen: OpenButtonLink[] = [];
+  const media4kLinksOpen: OpenButtonLink[] = [];
+
+  // 🔥 เรียกใช้ฟังก์ชันแทนโค้ดซ้ำ
+  if (deepLinks?.mediaUrl)
+    generateMediaLinks(
+      deepLinks.mediaUrl,
+      mediaLinksOpen,
+      allMovieFiles,
+      false
+    );
+  if (deepLinks?.mediaUrl4k)
+    generateMediaLinks(
+      deepLinks.mediaUrl4k,
+      media4kLinksOpen,
+      allMovieFiles,
+      false
+    );
+
   return (
     <div
       className="media-page"
@@ -484,8 +578,10 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
             query: { movieId: router.query.movieId },
           });
         }}
+        allFiles={allMovieFiles}
         revalidate={() => revalidate()}
         show={showManager}
+        generateMediaLinks={generateMediaLinks}
       />
       <BlacklistModal
         tmdbId={data.id}
@@ -631,6 +727,12 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               </>
             )}
           <PlayButton links={mediaLinks} />
+          <OpenButton links={mediaLinksOpen} className="ml-2 px-2" />
+          <OpenButton
+            links={media4kLinksOpen}
+            className="ml-2 px-2"
+            is4k={true}
+          />
           <RequestButton
             mediaType="movie"
             media={data.mediaInfo}
@@ -769,9 +871,6 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   </div>
                   <div className="relative z-10 flex h-full items-center justify-between p-4 text-gray-200 transition duration-300 group-hover:text-white">
                     <div>{data.collection.name}</div>
-                    <Button buttonSize="sm">
-                      {intl.formatMessage(globalMessages.view)}
-                    </Button>
                   </div>
                 </div>
               </Link>
@@ -1000,7 +1099,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                             className={`mr-1.5 text-xs leading-5 flag:${c.iso_3166_1}`}
                           />
                         )}
-                        <span>
+                        <span suppressHydrationWarning>
                           {intl.formatDisplayName(c.iso_3166_1, {
                             type: 'region',
                             fallback: 'none',
@@ -1068,11 +1167,8 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                 <span className="media-fact-value flex flex-row flex-wrap gap-5">
                   {streamingProviders.map((p) => {
                     return (
-                      <Tooltip content={p.name}>
-                        <span
-                          className="opacity-50 transition duration-300 hover:opacity-100"
-                          key={`provider-${p.id}`}
-                        >
+                      <Tooltip content={p.name} key={`provider-${p.id}`}>
+                        <span className="opacity-50 transition duration-300 hover:opacity-100">
                           <CachedImage
                             type="tmdb"
                             src={'https://image.tmdb.org/t/p/w45/' + p.logoPath}

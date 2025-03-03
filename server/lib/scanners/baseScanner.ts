@@ -1,6 +1,6 @@
 import TheMovieDb from '@server/api/themoviedb';
 import { MediaStatus, MediaType } from '@server/constants/media';
-import { getRepository } from '@server/datasource';
+import dataSource, { getRepository } from '@server/datasource';
 import Episode from '@server/entity/Episode';
 import { Ignore } from '@server/entity/Ignore';
 import Media from '@server/entity/Media';
@@ -40,12 +40,13 @@ interface ProcessOptions {
   externalServiceId?: number;
   externalServiceSlug?: string;
   title?: string;
+  part?: string | null;
   processing?: boolean;
 }
 
 export interface ProcessableSeason {
   seasonNumber: number;
-  ratingKey?: string;
+  ratingKey?: string | null;
   totalEpisodes: number;
   episodes: number;
   episodes4k: number;
@@ -56,8 +57,8 @@ export interface ProcessableSeason {
 
 export interface allEpisodes {
   episodeNumber: number;
-  ratingKey?: string;
-  part?: string;
+  ratingKey?: string | null;
+  part?: string | null;
 }
 
 export interface part {
@@ -104,6 +105,133 @@ class BaseScanner<T> {
     return existing;
   }
 
+  private async updateMedia(media: Media) {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+
+    try {
+      await queryRunner.startTransaction();
+
+      const mediaRepository = queryRunner.manager.getRepository(Media);
+      const seasonRepository = queryRunner.manager.getRepository(Season);
+      const episodeRepository = queryRunner.manager.getRepository(Episode);
+
+      // ถ้า media ไม่มี id -> ใช้ save() เพื่อสร้างใหม่
+      if (
+        !media.id ||
+        media.seasons?.some((s) => !s.id) ||
+        media.seasons?.some((s) => s.episodes?.some((e) => !e.id))
+      ) {
+        const savedMedia = await mediaRepository.save(media);
+        this.log(`[INFO] Saved new media with ID: ${savedMedia.id}`);
+        return;
+      }
+
+      if (!media || !media.id) return;
+
+      try {
+        this.log(`[DEBUG] Updating media ID: ${media.id}`);
+        const dbType = dataSource.options.type;
+        const isPostgres = dbType === 'postgres';
+        const query = isPostgres
+          ? `UPDATE media SET status = $1, status4k = $2 WHERE id = $3`
+          : `UPDATE media SET status = ?, status4k = ? WHERE id = ?`;
+
+        await mediaRepository.query(query, [
+          media.status,
+          media.status4k,
+          media.id,
+        ]);
+
+        await mediaRepository
+          .createQueryBuilder()
+          .update(Media)
+          .set({
+            tmdbId: media.tmdbId,
+            tvdbId: media.tvdbId,
+            imdbId: media.imdbId,
+            mediaAddedAt: media.mediaAddedAt,
+            ratingKey: media.ratingKey,
+            ratingKey4k: media.ratingKey4k,
+            parts: media.parts,
+            serviceId: media.serviceId,
+            serviceId4k: media.serviceId4k,
+            externalServiceId: media.externalServiceId,
+            externalServiceId4k: media.externalServiceId4k,
+            externalServiceSlug: media.externalServiceSlug,
+            externalServiceSlug4k: media.externalServiceSlug4k,
+            jellyfinMediaId: media.jellyfinMediaId,
+            jellyfinMediaId4k: media.jellyfinMediaId4k,
+          })
+          .where('id = :id', { id: media.id })
+          .execute();
+      } catch (error) {
+        this.log(`After update - media.status:: ${media.status}`);
+        this.log(`[ERROR] Failed to update media ID: ${media.id} - ${error}`);
+      }
+
+      for (const season of media.seasons ?? []) {
+        if (!season || !season.id) continue;
+
+        try {
+          this.log(
+            `[DEBUG] Updating season ID: ${season.id} (Media ID: ${media.id})`
+          );
+          await seasonRepository
+            .createQueryBuilder()
+            .update(Season)
+            .set({
+              seasonNumber: season.seasonNumber,
+              ratingKey: season.ratingKey,
+              ratingKey4k: season.ratingKey4k,
+              status: season.status,
+              status4k: season.status4k,
+            })
+            .where('id = :id', { id: season.id })
+            .execute();
+        } catch (error) {
+          this.log(
+            `[ERROR] Failed to update season ID: ${season.id} (Media ID: ${media.id} - ${error})`
+          );
+        }
+
+        for (const episode of season.episodes ?? []) {
+          if (!episode || !episode.id) continue;
+
+          try {
+            this.log(
+              `[DEBUG] Updating episode ID: ${episode.id} (Season ID: ${season.id})`
+            );
+            await episodeRepository
+              .createQueryBuilder()
+              .update(Episode)
+              .set({
+                episodeNumber: episode.episodeNumber,
+                ratingKey: episode.ratingKey,
+                ratingKey4k: episode.ratingKey4k,
+                status: episode.status,
+                status4k: episode.status4k,
+                part: episode.part,
+              })
+              .where('id = :id', { id: episode.id })
+              .execute();
+          } catch (error) {
+            this.log(
+              `[ERROR] Failed to update episode ID: ${episode.id} (Season ID: ${season.id} - ${error})`
+            );
+          }
+        }
+      }
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      this.log(`[ERROR] Failed to update media ID: ${media.id} - ${error}`);
+      await queryRunner.rollbackTransaction();
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   protected async processMovie(
     tmdbId: number,
     {
@@ -115,10 +243,9 @@ class BaseScanner<T> {
       externalServiceSlug,
       processing = false,
       title = 'Unknown Title',
+      part,
     }: ProcessOptions = {}
   ): Promise<void> {
-    const mediaRepository = getRepository(Media);
-
     await this.asyncLock.dispatch(tmdbId, async () => {
       const existing = await this.getExisting(tmdbId, MediaType.MOVIE);
 
@@ -176,8 +303,14 @@ class BaseScanner<T> {
           changedExisting = true;
         }
 
+        existing.parts =
+          JSON.stringify([
+            ...JSON.parse(existing.parts ?? '[]'),
+            ...JSON.parse(part ?? '[]'),
+          ]) || null;
+
         if (changedExisting) {
-          await mediaRepository.save(existing);
+          await this.updateMedia(existing);
           this.log(
             `Media for ${title} exists. Changes were detected and the title will be updated.`,
             'info'
@@ -218,7 +351,8 @@ class BaseScanner<T> {
           newMedia.ratingKey4k =
             is4k && this.enable4kMovie ? ratingKey : undefined;
         }
-        await mediaRepository.save(newMedia);
+        newMedia.parts = part;
+        await this.updateMedia(newMedia);
         this.log(`Saved new media: ${title}`);
       }
     });
@@ -248,47 +382,83 @@ class BaseScanner<T> {
       title = 'Unknown Title',
     }: ProcessOptions = {}
   ): Promise<void> {
-    const mediaRepository = getRepository(Media);
-
     const updateStatus = (
-      prevStatus: MediaStatus,
-      hasComplete: boolean,
-      hasIncomplete: boolean,
-      isProcessing: boolean
+      oldStatus: MediaStatus,
+      newStatus: MediaStatus,
+      epispde = false
     ) => {
+      if (oldStatus === MediaStatus.AVAILABLE && epispde)
+        return MediaStatus.AVAILABLE;
+      if (oldStatus !== MediaStatus.AVAILABLE && epispde) return newStatus;
       if (
-        prevStatus === MediaStatus.UNKNOWN ||
-        prevStatus === MediaStatus.PROCESSING
-      ) {
-        return hasComplete
-          ? MediaStatus.AVAILABLE
-          : hasIncomplete
-          ? MediaStatus.PARTIALLY_AVAILABLE
-          : isProcessing
-          ? MediaStatus.PROCESSING
-          : MediaStatus.UNKNOWN;
-      }
-
-      if (prevStatus === MediaStatus.MIXED_AVAILABILITY) {
+        oldStatus === MediaStatus.MIXED_AVAILABILITY ||
+        newStatus === MediaStatus.MIXED_AVAILABILITY
+      )
         return MediaStatus.MIXED_AVAILABILITY;
-      }
+      if (
+        oldStatus === MediaStatus.AVAILABLE &&
+        newStatus === MediaStatus.AVAILABLE
+      )
+        return MediaStatus.AVAILABLE;
+      if (
+        oldStatus === MediaStatus.AVAILABLE &&
+        newStatus === MediaStatus.UNKNOWN
+      )
+        return MediaStatus.MIXED_AVAILABILITY;
+      if (
+        oldStatus === MediaStatus.AVAILABLE &&
+        newStatus === MediaStatus.PARTIALLY_AVAILABLE
+      )
+        return MediaStatus.MIXED_AVAILABILITY;
+      if (
+        oldStatus === MediaStatus.PARTIALLY_AVAILABLE &&
+        newStatus === MediaStatus.AVAILABLE
+      )
+        return MediaStatus.MIXED_AVAILABILITY;
+      if (
+        oldStatus === MediaStatus.PARTIALLY_AVAILABLE &&
+        newStatus === MediaStatus.UNKNOWN
+      )
+        return MediaStatus.MIXED_AVAILABILITY;
+      if (
+        oldStatus === MediaStatus.PARTIALLY_AVAILABLE &&
+        newStatus === MediaStatus.PARTIALLY_AVAILABLE
+      )
+        return MediaStatus.PARTIALLY_AVAILABLE;
+      if (
+        oldStatus === MediaStatus.UNKNOWN &&
+        newStatus === MediaStatus.AVAILABLE
+      )
+        return MediaStatus.MIXED_AVAILABILITY;
+      if (
+        oldStatus === MediaStatus.UNKNOWN &&
+        newStatus === MediaStatus.UNKNOWN
+      )
+        return MediaStatus.UNKNOWN;
+      if (
+        oldStatus === MediaStatus.UNKNOWN &&
+        newStatus === MediaStatus.PARTIALLY_AVAILABLE
+      )
+        return MediaStatus.PARTIALLY_AVAILABLE;
 
-      if (hasComplete || hasIncomplete) {
-        if (prevStatus === MediaStatus.AVAILABLE && hasComplete)
-          return MediaStatus.AVAILABLE;
-        if (prevStatus === MediaStatus.AVAILABLE && hasIncomplete)
-          return MediaStatus.MIXED_AVAILABILITY;
-        if (prevStatus === MediaStatus.PARTIALLY_AVAILABLE && hasComplete)
-          return MediaStatus.MIXED_AVAILABILITY;
-        if (prevStatus === MediaStatus.PARTIALLY_AVAILABLE && hasIncomplete)
-          return MediaStatus.PARTIALLY_AVAILABLE;
-      }
+      return newStatus;
+    };
 
-      if (isProcessing) {
-        return MediaStatus.PROCESSING;
-      }
-
-      return prevStatus;
+    const updateRatingKey = (
+      existingKey?: string | null,
+      newKey?: string | null
+    ): string | null => {
+      if (!newKey) return existingKey ?? null;
+      const updatedKey = [
+        ...new Set(
+          (existingKey ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .concat(newKey)
+        ),
+      ].join(', ');
+      return updatedKey || null;
     };
 
     await this.asyncLock.dispatch(tmdbId, async () => {
@@ -296,324 +466,254 @@ class BaseScanner<T> {
       const ignoreRepository = getRepository(Ignore);
 
       const newSeasons: Season[] = [];
+      const sSeasons: Season[] = [];
 
-      const currentStandardSeasonsAvailable = (
-        media?.seasons.filter(
-          (season) => season.status === MediaStatus.AVAILABLE
-        ) ?? []
-      ).length;
+      const mediaIs4k =
+        this.enable4kShow && seasons?.some((s) => s.episodes4k > 0);
 
-      const current4kSeasonsAvailable = (
-        media?.seasons.filter(
-          (season) => season.status4k === MediaStatus.AVAILABLE
-        ) ?? []
-      ).length;
-
-      if (media && !media.ratingKey?.split(', ').includes(ratingKey ?? '')) {
-        media.ratingKey = [media.ratingKey, ratingKey]
-          .filter(Boolean)
-          .join(', ');
+      if (media && !mediaIs4k) {
+        media.ratingKey = updateRatingKey(media.ratingKey, ratingKey);
       }
 
-      for (const season of seasons) {
-        // const episodes: Episode[] = [];
+      if (media && mediaIs4k) {
+        media.ratingKey4k = updateRatingKey(media.ratingKey4k, ratingKey);
+      }
 
-        const existingSeason = media?.seasons.find(
-          (es) => es.seasonNumber === season.seasonNumber
+      const seasonMap = new Map(media?.seasons.map((s) => [s.seasonNumber, s]));
+      const sSeasonMap = new Map(sSeasons.map((s) => [s.seasonNumber, s]));
+
+      for (const season of seasons) {
+        const seasonIs4k = this.enable4kShow && season.episodes4k > 0;
+        const existingSeason = seasonMap.get(season.seasonNumber);
+
+        const sSeason =
+          sSeasonMap.get(season.seasonNumber) ??
+          new Season({
+            seasonNumber: season.seasonNumber,
+            ratingKey: !seasonIs4k ? season.ratingKey : null,
+            ratingKey4k: seasonIs4k ? season.ratingKey : null,
+            status: MediaStatus.DISABLED,
+            status4k: MediaStatus.DISABLED,
+            episodes: [],
+          });
+
+        if (!sSeasonMap.has(season.seasonNumber)) {
+          sSeasons.push(sSeason);
+          sSeasonMap.set(season.seasonNumber, sSeason);
+        }
+
+        const episodeMap = new Map(
+          existingSeason?.episodes?.map((s) => [s.episodeNumber, s])
         );
 
-        if (
-          media &&
-          season.episodes4k > 0 &&
-          this.enable4kShow &&
-          media.ratingKey4k !== ratingKey
-        ) {
-          media.ratingKey4k = ratingKey;
-        }
+        const ignoreDataEntries = await Promise.all(
+          season.allEpisodes.map(async (episode) => {
+            const ignoreData = await ignoreRepository.findOne({
+              where: {
+                tmdbId,
+                seasonNumber: season.seasonNumber,
+                episodeNumber: episode.episodeNumber,
+              },
+            });
+            return [episode.episodeNumber, ignoreData] as const;
+          })
+        );
 
-        if (existingSeason) {
-          // Here we update seasons if they already exist.
-          // If the season is already marked as available, we
-          // force it to stay available (to avoid competing scanners)
-
-          if (
-            !existingSeason.ratingKey
-              ?.split(', ')
-              .includes(season.ratingKey ?? '')
-          ) {
-            existingSeason.ratingKey = [
-              existingSeason.ratingKey,
-              season.ratingKey,
-            ]
-              .filter(Boolean)
-              .join(', ');
-          }
-
-          // Season-level status
-          existingSeason.status = updateStatus(
-            existingSeason.status,
-            season.totalEpisodes > 0 &&
-              season.totalEpisodes === season.episodes, // ✅ ครบทุกตอน
-            season.totalEpisodes > 0 &&
-              season.episodes > 0 &&
-              season.totalEpisodes !== season.episodes, // ✅ มีตอนแต่ไม่ครบ
-            !!(!season.is4kOverride && season.processing)
-          );
-
-          existingSeason.status4k = updateStatus(
-            existingSeason.status4k,
-            this.enable4kShow &&
-              season.totalEpisodes > 0 &&
-              season.episodes4k === season.totalEpisodes,
-            this.enable4kShow &&
-              season.totalEpisodes > 0 &&
-              season.episodes4k > 0 &&
-              season.episodes4k !== season.totalEpisodes,
-            !!(season.is4kOverride && season.processing)
-          );
-        } else {
-          newSeasons.push(
-            new Season({
-              seasonNumber: season.seasonNumber,
-              ratingKey: season.ratingKey,
-              status:
-                season.totalEpisodes === season.episodes && season.episodes > 0
-                  ? MediaStatus.AVAILABLE
-                  : season.episodes > 0
-                  ? MediaStatus.PARTIALLY_AVAILABLE
-                  : !season.is4kOverride && season.processing
-                  ? MediaStatus.PROCESSING
-                  : MediaStatus.UNKNOWN,
-              status4k:
-                this.enable4kShow &&
-                season.totalEpisodes === season.episodes4k &&
-                season.episodes4k > 0
-                  ? MediaStatus.AVAILABLE
-                  : this.enable4kShow && season.episodes4k > 0
-                  ? MediaStatus.PARTIALLY_AVAILABLE
-                  : season.is4kOverride && season.processing
-                  ? MediaStatus.PROCESSING
-                  : MediaStatus.UNKNOWN,
-            })
-          );
-        }
+        const ignoreDataMap = new Map<number, Ignore | null>(ignoreDataEntries);
 
         const newEpisodes: Episode[] = [];
 
         for (const episode of season.allEpisodes) {
-          const targetSeason = media?.seasons.find(
-            (s) => s.seasonNumber === season.seasonNumber
-          );
-          const existingEpisode = targetSeason?.episodes?.find(
-            (es) => es.episodeNumber === episode.episodeNumber
-          );
-          const ignoreData = await ignoreRepository.findOne({
-            where: {
-              tmdbId: tmdbId,
-              seasonNumber: season.seasonNumber,
-              episodeNumber: episode.episodeNumber,
-            },
+          const existingEpisode = episodeMap.get(episode.episodeNumber);
+          const ignoreData = ignoreDataMap.get(episode.episodeNumber);
+
+          const hasRatingKey = episode.part && episode.ratingKey;
+          const hasSeasonEpisodes = season.allEpisodes.some((e) => e.ratingKey);
+
+          const calculateStatus = () =>
+            ignoreData
+              ? MediaStatus.IGNORED
+              : hasRatingKey
+              ? MediaStatus.AVAILABLE
+              : hasSeasonEpisodes
+              ? MediaStatus.MISSING
+              : MediaStatus.UNKNOWN;
+
+          const sEpisode = new Episode({
+            episodeNumber: episode.episodeNumber,
+            ratingKey: !seasonIs4k ? episode.ratingKey : null,
+            ratingKey4k: seasonIs4k ? episode.ratingKey : null,
+            part: episode.part,
+            status: !seasonIs4k ? calculateStatus() : MediaStatus.DISABLED,
+            status4k: seasonIs4k ? calculateStatus() : MediaStatus.DISABLED,
           });
 
+          sSeason.episodes.push(sEpisode);
+
           if (existingEpisode) {
-            if (
-              !existingEpisode.ratingKey
-                ?.split(', ')
-                .includes(episode.ratingKey ?? '')
-            ) {
-              existingEpisode.ratingKey = [
-                existingEpisode.ratingKey,
-                episode.ratingKey,
-              ]
-                .filter(Boolean)
-                .join(', ');
-            }
-            existingEpisode.part = JSON.stringify([
-              ...JSON.parse(existingEpisode.part || '[]'),
-              ...JSON.parse(episode.part || '[]'),
-            ]);
-            existingEpisode.status =
-              existingEpisode.part !== '[]' && existingEpisode.ratingKey !== ''
-                ? MediaStatus.AVAILABLE
-                : existingSeason?.status === MediaStatus.PARTIALLY_AVAILABLE ||
-                  newSeasons.some(
-                    (s) => s.status === MediaStatus.PARTIALLY_AVAILABLE
-                  )
-                ? MediaStatus.MISSING
-                : ignoreData
-                ? MediaStatus.IGNORED
-                : MediaStatus.UNKNOWN;
+            const existingParts = existingEpisode.part
+              ? JSON.parse(existingEpisode.part)
+              : [];
+            const newParts = sEpisode.part ? JSON.parse(sEpisode.part) : [];
+            const combinedParts = [...existingParts, ...newParts];
+
+            existingEpisode.ratingKey = !seasonIs4k
+              ? updateRatingKey(existingEpisode.ratingKey, sEpisode.ratingKey)
+              : existingEpisode.ratingKey;
+            existingEpisode.ratingKey4k = seasonIs4k
+              ? updateRatingKey(
+                  existingEpisode.ratingKey4k,
+                  sEpisode.ratingKey4k
+                )
+              : existingEpisode.ratingKey4k;
+            existingEpisode.part = combinedParts.length
+              ? JSON.stringify(combinedParts)
+              : null;
+            existingEpisode.status = !seasonIs4k
+              ? updateStatus(existingEpisode.status, sEpisode.status, true)
+              : existingEpisode.status;
+            existingEpisode.status4k = seasonIs4k
+              ? updateStatus(existingEpisode.status4k, sEpisode.status4k, true)
+              : existingEpisode.status4k;
           } else {
-            newEpisodes.push(
-              new Episode({
-                episodeNumber: episode.episodeNumber,
-                ratingKey: episode.ratingKey,
-                part: episode.part,
-                status:
-                  episode.part !== '[]' && episode.ratingKey !== ''
-                    ? MediaStatus.AVAILABLE
-                    : existingSeason?.status ===
-                        MediaStatus.PARTIALLY_AVAILABLE ||
-                      newSeasons.some(
-                        (s) => s.status === MediaStatus.PARTIALLY_AVAILABLE
-                      )
-                    ? MediaStatus.MISSING
-                    : ignoreData
-                    ? MediaStatus.IGNORED
-                    : MediaStatus.UNKNOWN,
-              })
-            );
+            newEpisodes.push(sEpisode);
           }
         }
 
-        if (existingSeason) {
-          existingSeason.episodes = existingSeason.episodes ?? [];
-          existingSeason.episodes = [
-            ...existingSeason.episodes,
-            ...newEpisodes,
-          ];
-        } else {
-          const lastAddedSeason = newSeasons.find(
-            (s) => s.seasonNumber === season.seasonNumber
+        const countAvailableEpisodes = (ultraHD: boolean) => {
+          const statusKey = ultraHD ? 'status4k' : 'status';
+          const ratingKey = ultraHD ? 'ratingKey4k' : 'ratingKey';
+
+          return sSeason.episodes.filter(
+            (e) =>
+              e[statusKey] !== MediaStatus.IGNORED && e.part && e[ratingKey]
+          ).length;
+        };
+
+        const availableEpisodes = {
+          normal: countAvailableEpisodes(false),
+          ultraHD: countAvailableEpisodes(true),
+        };
+
+        const isComplete = (count: number) =>
+          count > 0 && count === season.totalEpisodes;
+        const isIncomplete = (count: number) => count > 0;
+
+        const seasonStatus = {
+          complete: isComplete(availableEpisodes.normal),
+          incomplete: isIncomplete(availableEpisodes.normal),
+          complete4k: seasonIs4k && isComplete(availableEpisodes.ultraHD),
+          incomplete4k: seasonIs4k && isIncomplete(availableEpisodes.ultraHD),
+        };
+
+        const isProcessing = (ultraHD: boolean) =>
+          Boolean(
+            season.processing &&
+              (ultraHD ? season.is4kOverride : !season.is4kOverride)
           );
-          if (lastAddedSeason) {
-            lastAddedSeason.episodes = lastAddedSeason.episodes ?? [];
-            lastAddedSeason.episodes = [
-              ...lastAddedSeason.episodes,
-              ...newEpisodes,
-            ];
-          }
+
+        const processingStatus = {
+          normal: isProcessing(false),
+          ultraHD: isProcessing(true),
+        };
+
+        const calculateSeasonStatus = (ultraHD: boolean) => {
+          if (seasonStatus[ultraHD ? 'complete4k' : 'complete'])
+            return MediaStatus.AVAILABLE;
+          if (seasonStatus[ultraHD ? 'incomplete4k' : 'incomplete'])
+            return MediaStatus.PARTIALLY_AVAILABLE;
+          if (processingStatus[ultraHD ? 'ultraHD' : 'normal'])
+            return MediaStatus.PROCESSING;
+          return MediaStatus.UNKNOWN;
+        };
+
+        sSeason.status = !seasonIs4k
+          ? calculateSeasonStatus(false)
+          : MediaStatus.DISABLED;
+        sSeason.status4k = seasonIs4k
+          ? calculateSeasonStatus(true)
+          : MediaStatus.DISABLED;
+
+        if (existingSeason) {
+          existingSeason.ratingKey = !seasonIs4k
+            ? updateRatingKey(existingSeason.ratingKey, sSeason.ratingKey)
+            : existingSeason.ratingKey;
+          existingSeason.ratingKey4k = seasonIs4k
+            ? updateRatingKey(existingSeason.ratingKey4k, sSeason.ratingKey4k)
+            : existingSeason.ratingKey4k;
+          existingSeason.status = !seasonIs4k
+            ? updateStatus(existingSeason.status, sSeason.status)
+            : existingSeason.status;
+          existingSeason.status4k = seasonIs4k
+            ? updateStatus(existingSeason.status4k, sSeason.status4k)
+            : existingSeason.status4k;
+          existingSeason.episodes.push(...newEpisodes);
+        } else {
+          newSeasons.push(sSeason);
         }
       }
 
+      const hasAvailableEpisodes = (season: Season, ultraHD: boolean) =>
+        season.episodes.some((e) =>
+          ultraHD
+            ? e.status4k !== MediaStatus.IGNORED
+            : e.status !== MediaStatus.IGNORED
+        );
+
+      const getOverallStatus = (seasons: Season[], ultraHD: boolean) => {
+        const allAvailable = seasons.every(
+          (s) =>
+            hasAvailableEpisodes(s, ultraHD) &&
+            (ultraHD ? s.status4k : s.status) === MediaStatus.AVAILABLE
+        );
+
+        return allAvailable
+          ? MediaStatus.AVAILABLE
+          : seasons.some((s) =>
+              [
+                MediaStatus.PARTIALLY_AVAILABLE,
+                MediaStatus.MIXED_AVAILABILITY,
+                MediaStatus.AVAILABLE,
+              ].includes(ultraHD ? s.status4k : s.status)
+            )
+          ? MediaStatus.PARTIALLY_AVAILABLE
+          : seasons.some(
+              (s) =>
+                (ultraHD ? s.status4k : s.status) === MediaStatus.PROCESSING
+            )
+          ? MediaStatus.PROCESSING
+          : MediaStatus.DISABLED;
+      };
+
+      const isAllStandardSeasons = getOverallStatus(sSeasons, false);
+      const isAll4kSeasons = getOverallStatus(sSeasons, true);
+
       if (media) {
         media.seasons = [...media.seasons, ...newSeasons];
-
-        const isAllStandardSeasons =
-          media.seasons.length &&
-          media.seasons
-            .filter((season) => season.episodes.length > 0)
-            .every((season) =>
-              season.episodes
-                .filter((episode) => episode.status !== MediaStatus.IGNORED)
-                .every((episode) => episode.status === MediaStatus.AVAILABLE)
-            );
-
-        const isAll4kSeasons =
-          media.seasons.length &&
-          media.seasons
-            .filter((season) => season.episodes.length > 0)
-            .every((season) =>
-              season.episodes
-                .filter((episode) => episode.status4k !== MediaStatus.IGNORED)
-                .every((episode) => episode.status4k === MediaStatus.AVAILABLE)
-            );
-
-        const newStandardSeasonsAvailable = (
-          media.seasons.filter(
-            (season) => season.status === MediaStatus.AVAILABLE
-          ) ?? []
-        ).length;
-
-        const new4kSeasonsAvailable = (
-          media.seasons.filter(
-            (season) => season.status4k === MediaStatus.AVAILABLE
-          ) ?? []
-        ).length;
-
-        // If at least one new season has become available, update
-        // the lastSeasonChange field so we can trigger notifications
-        if (newStandardSeasonsAvailable > currentStandardSeasonsAvailable) {
-          this.log(
-            `Detected ${
-              newStandardSeasonsAvailable - currentStandardSeasonsAvailable
-            } new standard season(s) for ${title}`,
-            'debug'
-          );
-          media.lastSeasonChange = new Date();
-
-          if (mediaAddedAt) {
-            media.mediaAddedAt = mediaAddedAt;
-          }
-        }
-
-        if (new4kSeasonsAvailable > current4kSeasonsAvailable) {
-          this.log(
-            `Detected ${
-              new4kSeasonsAvailable - current4kSeasonsAvailable
-            } new 4K season(s) for ${title}`,
-            'debug'
-          );
-          media.lastSeasonChange = new Date();
-        }
 
         if (!media.mediaAddedAt && mediaAddedAt) {
           media.mediaAddedAt = mediaAddedAt;
         }
 
-        if (serviceId !== undefined) {
-          media[is4k ? 'serviceId4k' : 'serviceId'] = serviceId;
-        }
+        media[is4k ? 'serviceId4k' : 'serviceId'] =
+          serviceId ?? media[is4k ? 'serviceId4k' : 'serviceId'];
+        media[is4k ? 'externalServiceId4k' : 'externalServiceId'] =
+          externalServiceId ??
+          media[is4k ? 'externalServiceId4k' : 'externalServiceId'];
+        media[is4k ? 'externalServiceSlug4k' : 'externalServiceSlug'] =
+          externalServiceSlug ??
+          media[is4k ? 'externalServiceSlug4k' : 'externalServiceSlug'];
 
-        if (externalServiceId !== undefined) {
-          media[is4k ? 'externalServiceId4k' : 'externalServiceId'] =
-            externalServiceId;
-        }
+        media.status = !mediaIs4k
+          ? updateStatus(media.status, isAllStandardSeasons)
+          : media.status;
+        media.status4k = mediaIs4k
+          ? updateStatus(media.status4k, isAll4kSeasons)
+          : media.status4k;
 
-        if (externalServiceSlug !== undefined) {
-          media[is4k ? 'externalServiceSlug4k' : 'externalServiceSlug'] =
-            externalServiceSlug;
-        }
-
-        media.status = updateStatus(
-          media.status,
-          !!isAllStandardSeasons,
-          media.seasons.some(
-            (season) =>
-              season.status === MediaStatus.PARTIALLY_AVAILABLE ||
-              season.status === MediaStatus.AVAILABLE ||
-              season.status === MediaStatus.MIXED_AVAILABILITY
-          ),
-          media.seasons.some(
-            (season) => season.status === MediaStatus.PROCESSING
-          )
-        );
-
-        media.status4k = updateStatus(
-          media.status4k,
-          !!(isAll4kSeasons && this.enable4kShow),
-          media.seasons.some(
-            (season) =>
-              season.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-              season.status4k === MediaStatus.AVAILABLE ||
-              season.status4k === MediaStatus.MIXED_AVAILABILITY
-          ),
-          media.seasons.some(
-            (season) => season.status4k === MediaStatus.PROCESSING
-          )
-        );
-        await mediaRepository.save(media);
+        await this.updateMedia(media);
         this.log(`Updating existing title: ${title}`);
       } else {
-        const isAllStandardSeasons =
-          newSeasons.length &&
-          newSeasons
-            .filter((season) => season.episodes.length > 0)
-            .every((season) =>
-              season.episodes
-                .filter((episode) => episode.status !== MediaStatus.IGNORED)
-                .every((episode) => episode.status === MediaStatus.AVAILABLE)
-            );
-
-        const isAll4kSeasons =
-          newSeasons.length &&
-          newSeasons
-            .filter((season) => season.episodes.length > 0)
-            .every((season) =>
-              season.episodes
-                .filter((episode) => episode.status4k !== MediaStatus.IGNORED)
-                .every((episode) => episode.status4k === MediaStatus.AVAILABLE)
-            );
         const newMedia = new Media({
           mediaType: MediaType.TV,
           seasons: newSeasons,
@@ -626,52 +726,28 @@ class BaseScanner<T> {
           externalServiceId4k: is4k ? externalServiceId : undefined,
           externalServiceSlug: !is4k ? externalServiceSlug : undefined,
           externalServiceSlug4k: is4k ? externalServiceSlug : undefined,
-          ratingKey: newSeasons.some(
-            (sn) =>
-              sn.status === MediaStatus.PARTIALLY_AVAILABLE ||
-              sn.status === MediaStatus.AVAILABLE
-          )
-            ? ratingKey
-            : undefined,
-          ratingKey4k:
-            this.enable4kShow &&
-            newSeasons.some(
-              (sn) =>
-                sn.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-                sn.status4k === MediaStatus.AVAILABLE
+          ratingKey:
+            !mediaIs4k &&
+            newSeasons.some((sn) =>
+              [MediaStatus.PARTIALLY_AVAILABLE, MediaStatus.AVAILABLE].includes(
+                sn.status
+              )
             )
               ? ratingKey
               : undefined,
-          status: isAllStandardSeasons
-            ? MediaStatus.AVAILABLE
-            : newSeasons.some(
-                (season) =>
-                  season.status === MediaStatus.PARTIALLY_AVAILABLE ||
-                  season.status === MediaStatus.AVAILABLE
+          ratingKey4k:
+            mediaIs4k &&
+            newSeasons.some((sn) =>
+              [MediaStatus.PARTIALLY_AVAILABLE, MediaStatus.AVAILABLE].includes(
+                sn.status4k
               )
-            ? MediaStatus.PARTIALLY_AVAILABLE
-            : newSeasons.some(
-                (season) => season.status === MediaStatus.PROCESSING
-              )
-            ? MediaStatus.PROCESSING
-            : MediaStatus.UNKNOWN,
-          status4k:
-            isAll4kSeasons && this.enable4kShow
-              ? MediaStatus.AVAILABLE
-              : this.enable4kShow &&
-                newSeasons.some(
-                  (season) =>
-                    season.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-                    season.status4k === MediaStatus.AVAILABLE
-                )
-              ? MediaStatus.PARTIALLY_AVAILABLE
-              : newSeasons.some(
-                  (season) => season.status4k === MediaStatus.PROCESSING
-                )
-              ? MediaStatus.PROCESSING
-              : MediaStatus.UNKNOWN,
+            )
+              ? ratingKey
+              : undefined,
+          status: !mediaIs4k ? isAllStandardSeasons : MediaStatus.DISABLED,
+          status4k: mediaIs4k ? isAll4kSeasons : MediaStatus.DISABLED,
         });
-        await mediaRepository.save(newMedia);
+        await this.updateMedia(newMedia);
         this.log(`Saved ${title}`);
       }
     });

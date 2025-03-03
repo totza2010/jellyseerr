@@ -1,3 +1,4 @@
+import TmdbLogo from '@app/assets/tmdb_logo.svg';
 import AirDateBadge from '@app/components/AirDateBadge';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
@@ -7,15 +8,12 @@ import OpenButton from '@app/components/Common/OpenButton';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
 import Tooltip from '@app/components/Common/Tooltip';
 import IgnoreModal from '@app/components/IgnoreModal';
-import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { FolderOpenIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import { MediaStatus } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
 import type Episode from '@server/entity/Episode';
-import type { default as SeasonEntity } from '@server/entity/Season';
 import type {
   Episode as EpisodeEntity,
   SeasonWithEpisodes,
@@ -23,6 +21,7 @@ import type {
 } from '@server/models/Tv';
 import Image from 'next/image';
 import { useCallback, useState } from 'react';
+import { useLocale } from 'react-aria';
 import { useIntl } from 'react-intl';
 import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
@@ -32,27 +31,54 @@ const messages = defineMessages('components.TvDetails.Season', {
   noepisodes: 'Episode list unavailable.',
   play: 'Play on {mediaServerName}',
   open: 'Open on {mediaServerName}',
+  status4k: '4K {status}',
+  tmdbuserscore: 'TMDB User Score',
 });
 
 type SeasonProps = {
   seasonNumber: number;
-  season?: SeasonEntity | null;
   episodeLink?: Partial<Episode>[] | null;
   tv: TvDetails;
-  ignore: boolean;
   onUpdate: () => void;
+  allSeasonFiles: SeasonFile[];
+  generateMediaLinks: (
+    urls: string,
+    targetArray: OpenButtonLink[],
+    seasonFiles: MediaFile[],
+    tautulliUrl: boolean
+  ) => void;
+};
+
+interface MediaFile {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
+}
+
+type SeasonFile = {
+  file: string;
+  keys: string[];
+  library: string;
+  editionText: string | null;
+  audioText: string | null;
+  subText: string | null;
+  uniqueAudio: string;
+  uniqueSub: string;
 };
 
 const Season = ({
   seasonNumber,
   tv,
-  season,
   episodeLink,
-  ignore,
   onUpdate,
+  allSeasonFiles,
+  generateMediaLinks,
 }: SeasonProps) => {
   const intl = useIntl();
-  const settings = useSettings();
+  const { locale } = useLocale();
   const {
     data,
     error,
@@ -79,24 +105,6 @@ const Season = ({
 
   if (!data) {
     return <div>{intl.formatMessage(messages.somethingwentwrong)}</div>;
-  }
-
-  function getAvalaibleMediaServerName(library = '') {
-    if (settings.currentSettings.mediaServerType === MediaServerType.EMBY) {
-      return intl.formatMessage(library ? messages.open : messages.play, {
-        mediaServerName: library ?? 'Emby',
-      });
-    }
-
-    if (settings.currentSettings.mediaServerType === MediaServerType.PLEX) {
-      return intl.formatMessage(library ? messages.open : messages.play, {
-        mediaServerName: library ?? 'Plex',
-      });
-    }
-
-    return intl.formatMessage(library ? messages.open : messages.play, {
-      mediaServerName: library ?? 'Jellyfin',
-    });
   }
 
   const onClickIgnoreItemBtn = async (): Promise<void> => {
@@ -175,83 +183,51 @@ const Season = ({
             const episodeLinks = episodeLink?.find(
               (s) => s.episodeNumber === episode.episodeNumber
             );
-            const episodeData = season?.episodes?.find(
+            const seasonData = tv.mediaInfo?.seasons?.find(
+              (e) => e.seasonNumber === seasonNumber
+            );
+            const episodeData = seasonData?.episodes?.find(
               (e) => e.episodeNumber === episode.episodeNumber
             );
             if (episodeData?.status === MediaStatus.IGNORED) return;
-            const episodeFile = episodeData?.part
-              ? JSON.parse(episodeData.part)
-              : [];
 
-            const mediaSeasonLinks: OpenButtonLink[] = [];
+            const episodeFiles = allSeasonFiles.filter(
+              (file) =>
+                episodeData?.part &&
+                JSON.parse(episodeData.part).some((f: { key: string }) =>
+                  f.key.split(/\s*,\s*/).includes(file.keys[0])
+                )
+            );
 
-            if (episodeLinks?.mediaUrl) {
-              const mediaUrls = episodeLinks.mediaUrl
-                .split(',')
-                .map((url) => url.trim());
+            const mediaEpisodeLinks: OpenButtonLink[] = [];
+            const media4kEpisodeLinks: OpenButtonLink[] = [];
 
-              mediaUrls.forEach((url) => {
-                // ดึง ratingKey จาก mediaUrl
-                const urlMatch = url.match(/metadata%2F(\d+)/);
-                const urlRatingKey = urlMatch ? urlMatch[1] : '';
+            if (episodeLinks?.mediaUrl)
+              generateMediaLinks(
+                episodeLinks.mediaUrl,
+                mediaEpisodeLinks,
+                episodeFiles,
+                false
+              );
+            if (episodeLinks?.mediaUrl4k)
+              generateMediaLinks(
+                episodeLinks.mediaUrl4k,
+                media4kEpisodeLinks,
+                episodeFiles,
+                false
+              );
 
-                // หาไฟล์ที่มี ratingKey ตรงกัน
-                const matchingFile = episodeFile.find((file: { key: string }) =>
-                  file.key.split(/\s*,\s*/).includes(urlRatingKey)
-                );
-
-                const selectedFile = matchingFile?.file || '';
-
-                // Find [edition-*]
-                const editionMatch = [
-                  ...selectedFile.matchAll(/\[(edition-[^\]]+)]/g),
-                ];
-                const editionText =
-                  editionMatch.length > 0
-                    ? editionMatch[editionMatch.length - 1][1].replace(
-                        'edition-',
-                        ''
-                      )
-                    : null;
-
-                // Find [Audio-*] and [Sub-*]
-                const audioMatch = [
-                  ...selectedFile.matchAll(/\[Audio-([^\]]+)]/g),
-                ];
-                const audioText =
-                  audioMatch.length > 0
-                    ? `🔊 Audio: ${audioMatch[audioMatch.length - 1][1]}`
-                    : null;
-
-                const subMatch = [...selectedFile.matchAll(/\[Sub-([^\]]+)]/g)];
-                const subText =
-                  subMatch.length > 0
-                    ? `📝 Sub: ${subMatch[subMatch.length - 1][1]}`
-                    : null;
-
-                // sort by: edition > (Audio + Sub)
-                let extractedText = editionText || null;
-
-                if (!extractedText) {
-                  extractedText =
-                    [audioText, subText].filter(Boolean).join(' / ') ||
-                    'Unknown';
-                }
-
-                mediaSeasonLinks.push({
-                  text: getAvalaibleMediaServerName(matchingFile?.library),
-                  tooltip: extractedText,
-                  url: url,
-                  svg: <FolderOpenIcon />,
-                });
-              });
-            }
             const airsrelative = episode.airDate
               ? new Date(episode.airDate).getTime() < new Date().getTime()
               : false;
 
             const shouldShowIgnoreButton = () => {
-              if (!showIgnoreButton || !episodeData?.status) return false;
+              if (
+                !showIgnoreButton ||
+                !episodeData?.status ||
+                !episodeData?.status4k
+              )
+                return false;
 
               const invalidStatuses: MediaStatus[] = [
                 MediaStatus.PROCESSING,
@@ -262,7 +238,12 @@ const Season = ({
                 MediaStatus.IGNORED,
               ];
 
-              return !invalidStatuses.includes(episodeData.status) && ignore;
+              return (
+                !invalidStatuses.includes(episodeData.status) &&
+                !invalidStatuses.includes(episodeData.status4k) &&
+                tv?.mediaInfo?.status !== MediaStatus.UNKNOWN &&
+                tv?.mediaInfo?.status4k !== MediaStatus.UNKNOWN
+              );
             };
 
             return (
@@ -275,9 +256,26 @@ const Season = ({
                     <h3 className="text-lg">
                       {episode.episodeNumber} - {episode.name}
                     </h3>
-                    {episode.airDate && (
-                      <AirDateBadge airDate={episode.airDate} />
-                    )}
+                    {shouldShowIgnoreButton() &&
+                      hasPermission(Permission.ADMIN) && (
+                        <Tooltip
+                          content={intl.formatMessage(
+                            globalMessages.addToIgnore
+                          )}
+                        >
+                          <Button
+                            buttonType={'ghost'}
+                            className="z-40 mr-2"
+                            buttonSize={'sm'}
+                            onClick={() => {
+                              setSelectedEpisode(episode || null);
+                              setShowIgnoreModal(true);
+                            }}
+                          >
+                            <XMarkIcon className={'h-3'} />
+                          </Button>
+                        </Tooltip>
+                      )}
                     {episodeData?.status === MediaStatus.AVAILABLE ? (
                       <>
                         <div className="hidden md:flex">
@@ -302,61 +300,152 @@ const Season = ({
                         </div>
                       </>
                     ) : null}
-                    {shouldShowIgnoreButton() &&
-                      hasPermission(Permission.ADMIN) && (
-                        <Tooltip
-                          content={intl.formatMessage(
-                            globalMessages.addToIgnore
-                          )}
+                    {episodeData?.status4k === MediaStatus.AVAILABLE ? (
+                      <>
+                        <div className="hidden md:flex">
+                          <Badge badgeType="success">
+                            {intl.formatMessage(messages.status4k, {
+                              status: intl.formatMessage(
+                                globalMessages.available
+                              ),
+                            })}
+                          </Badge>
+                        </div>
+                        <div className="flex md:hidden">
+                          <StatusBadgeMini status={MediaStatus.AVAILABLE} />
+                        </div>
+                      </>
+                    ) : episodeData?.status4k === MediaStatus.MISSING &&
+                      airsrelative ? (
+                      <>
+                        <div className="hidden md:flex">
+                          <Badge badgeType="danger">
+                            {intl.formatMessage(messages.status4k, {
+                              status: intl.formatMessage(
+                                globalMessages.missing
+                              ),
+                            })}
+                          </Badge>
+                        </div>
+                        <div className="flex md:hidden">
+                          <StatusBadgeMini status={MediaStatus.MISSING} />
+                        </div>
+                      </>
+                    ) : null}
+                    <OpenButton
+                      links={mediaEpisodeLinks}
+                      className="button-sm w-full py-0 px-2"
+                    />
+                    <OpenButton
+                      links={media4kEpisodeLinks}
+                      className="button-sm w-full py-0 px-2"
+                      is4k={true}
+                    />
+                  </div>
+                  <div className="flex flex-col space-y-2 xl:flex-row xl:items-center xl:space-y-0 xl:space-x-2">
+                    {episode.airDate && (
+                      <AirDateBadge airDate={episode.airDate} />
+                    )}
+                    {!!episode.voteCount && (
+                      <Tooltip
+                        content={intl.formatMessage(messages.tmdbuserscore)}
+                      >
+                        <a
+                          href={`https://www.themoviedb.org/tv/${tv.id}/season/${seasonNumber}/episode/${episode.episodeNumber}?language=${locale}`}
+                          className="media-rating"
+                          target="_blank"
+                          rel="noreferrer"
                         >
-                          <Button
-                            buttonType={'ghost'}
-                            className="z-40 mr-2"
-                            buttonSize={'sm'}
-                            onClick={() => {
-                              setSelectedEpisode(episode || null);
-                              setShowIgnoreModal(true);
-                            }}
-                          >
-                            <XMarkIcon className={'h-3'} />
-                          </Button>
-                        </Tooltip>
-                      )}
-                    <OpenButton links={mediaSeasonLinks} />
+                          <TmdbLogo className="mr-1 w-6" />
+                          <span>{Math.round(episode.voteAverage * 10)}%</span>
+                        </a>
+                      </Tooltip>
+                    )}
                   </div>
                   {episode.overview && <p>{episode.overview}</p>}
 
-                  {season &&
-                  season.episodes &&
-                  season.episodes.some(
+                  {seasonData &&
+                  seasonData.episodes &&
+                  seasonData.episodes.some(
                     (e) => e.episodeNumber === episode.episodeNumber
                   ) ? (
                     <div className="mt-2 flex flex-col space-y-2">
-                      {season.episodes.find(
+                      {seasonData.episodes.find(
                         (e) => e.episodeNumber === episode.episodeNumber
                       )?.part &&
                         JSON.parse(
-                          season.episodes.find(
+                          seasonData.episodes.find(
                             (e) => e.episodeNumber === episode.episodeNumber
                           )?.part || '[]'
                         ).map(
                           (
-                            p: { file: string; size: number },
+                            p: {
+                              file: string;
+                              size: number;
+                              container: string;
+                              videoResolution: string;
+                            },
                             index: number
                           ) => (
-                            <div key={index} className="flex items-center">
-                              <code className="flex-1 break-all">
-                                {p.file}
-                                <Badge className="ml-2">
-                                  {p.size >= 1024 * 1024 * 1024
-                                    ? (p.size / (1024 * 1024 * 1024)).toFixed(
-                                        2
-                                      ) + ' GB'
-                                    : (p.size / (1024 * 1024)).toFixed(2) +
-                                      ' MB'}
-                                </Badge>
-                              </code>
-                            </div>
+                            <Tooltip
+                              key={index}
+                              className=""
+                              content={
+                                <>
+                                  <div>
+                                    <strong>File:</strong>{' '}
+                                    {p.file.split('/').pop()}
+                                  </div>
+                                  <div className="flex">
+                                    <strong>Folder:</strong>
+                                    <span className="inline-flex flex-wrap pl-2">
+                                      <span className="block max-w-lg whitespace-pre-wrap break-words">
+                                        {p.file.substring(
+                                          0,
+                                          p.file.lastIndexOf('/')
+                                        )}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <strong>Size:</strong>{' '}
+                                    {p.size >= 1024 * 1024 * 1024
+                                      ? (p.size / (1024 * 1024 * 1024)).toFixed(
+                                          2
+                                        ) + ' GB'
+                                      : (p.size / (1024 * 1024)).toFixed(2) +
+                                        ' MB'}
+                                  </div>
+                                  <div>
+                                    <strong>Container:</strong>{' '}
+                                    {p.container ?? 'N/A'}
+                                  </div>
+                                  <div>
+                                    <strong>Resolution:</strong>{' '}
+                                    {p.videoResolution ?? 'N/A'}
+                                  </div>
+                                </>
+                              }
+                            >
+                              <div className="flex items-center">
+                                <code className="flex-1 break-all">
+                                  {p.file.split('/').pop()}
+                                  <Badge className="ml-2">
+                                    {p.size >= 1024 * 1024 * 1024
+                                      ? (p.size / (1024 * 1024 * 1024)).toFixed(
+                                          2
+                                        ) + ' GB'
+                                      : (p.size / (1024 * 1024)).toFixed(2) +
+                                        ' MB'}
+                                  </Badge>
+                                  {p.videoResolution === '4k' && (
+                                    <Badge className="ml-2" badgeType="danger">
+                                      4k
+                                    </Badge>
+                                  )}
+                                </code>
+                              </div>
+                            </Tooltip>
                           )
                         )}
                     </div>
@@ -369,6 +458,7 @@ const Season = ({
                       src={`https://image.tmdb.org/t/p/original/${episode.stillPath}`}
                       alt=""
                       fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     />
                   </div>
                 )}

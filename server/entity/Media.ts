@@ -108,6 +108,9 @@ class Media {
   @Column({ type: 'int', default: MediaStatus.UNKNOWN })
   public status4k: MediaStatus;
 
+  @Column({ type: 'text', nullable: true })
+  public parts?: string | null;
+
   @OneToMany(() => MediaRequest, (request) => request.media, { cascade: true })
   public requests: MediaRequest[];
 
@@ -203,6 +206,7 @@ class Media {
   public setPlexUrls(): void {
     const { machineId, webAppUrl } = getSettings().plex;
     const { externalUrl: tautulliUrl } = getSettings().tautulli;
+    const { externalUrl: tautulliUrl4k } = getSettings().tautulli;
 
     if (getSettings().main.mediaServerType == MediaServerType.PLEX) {
       if (this.ratingKey) {
@@ -231,19 +235,33 @@ class Media {
             .map((key) => `${tautulliUrl}/info?rating_key=${key}`)
             .join(', ');
         }
+      }
 
-        if (this.ratingKey4k) {
-          this.mediaUrl4k = `${
-            webAppUrl ? webAppUrl : 'https://app.plex.tv/desktop'
-          }#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${
-            this.ratingKey4k
-          }`;
+      if (this.ratingKey4k) {
+        const ratingKeys4k = this.ratingKey4k
+          .split(/\s*,\s*/)
+          .map((key) => key.trim());
 
-          this.iOSPlexUrl4k = `plex://preplay/?metadataKey=%2Flibrary%2Fmetadata%2F${this.ratingKey4k}&server=${machineId}`;
+        this.mediaUrl4k = ratingKeys4k
+          .map(
+            (key) =>
+              `${
+                webAppUrl ? webAppUrl : 'https://app.plex.tv/desktop'
+              }#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${key}`
+          )
+          .join(', ');
 
-          if (tautulliUrl) {
-            this.tautulliUrl4k = `${tautulliUrl}/info?rating_key=${this.ratingKey4k}`;
-          }
+        this.iOSPlexUrl4k = ratingKeys4k
+          .map(
+            (key) =>
+              `plex://preplay/?metadataKey=%2Flibrary%2Fmetadata%2F${key}&server=${machineId}`
+          )
+          .join(', ');
+
+        if (tautulliUrl4k) {
+          this.tautulliUrl4k = ratingKeys4k
+            .map((key) => `${tautulliUrl4k}/info?rating_key=${key}`)
+            .join(', ');
         }
       }
     } else {

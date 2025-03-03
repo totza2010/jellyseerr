@@ -20,4 +20,5 @@ export enum MediaStatus {
   MISSING,
   MIXED_AVAILABILITY,
   IGNORED,
+  DISABLED,
 }

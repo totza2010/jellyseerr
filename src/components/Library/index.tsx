@@ -19,6 +19,7 @@ import {
   ChevronRightIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
+import { MediaStatus } from '@server/constants/media';
 import type Media from '@server/entity/Media';
 import type { MediaResultsResponse } from '@server/interfaces/api/mediaInterfaces';
 import type { MovieDetails } from '@server/models/Movie';
@@ -450,9 +451,14 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                   const seasonLinks = deepLinks.seasons.find(
                     (s) => s.seasonNumber === season.seasonNumber
                   );
-                  const matchingSeason = item.seasons.find(
-                    (s) => s.seasonNumber === season.seasonNumber
-                  );
+                  const matchingSeason = item.seasons
+                    .filter(
+                      (s) =>
+                        s.episodes.filter(
+                          (e) => e.status !== MediaStatus.IGNORED
+                        ).length > 0
+                    )
+                    .find((s) => s.seasonNumber === season.seasonNumber);
 
                   return matchingSeason?.episodes.length ? (
                     <span key={`season-${season.id}`} className="mr-2">
@@ -468,7 +474,11 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                         }
                         tmdbId={item.tmdbId}
                         mediaType={item.mediaType}
-                        plexUrl={seasonLinks?.mediaUrl ?? ''}
+                        plexUrl={
+                          seasonLinks?.mediaUrl
+                            ?.split(/\s*,\s*/)
+                            .map((url) => url.trim())[0] ?? ''
+                        }
                       />
                     </span>
                   ) : null;
@@ -488,7 +498,9 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
             is4k={false}
             tmdbId={item.tmdbId}
             mediaType={item.mediaType}
-            plexUrl={deepLinks.mediaUrl}
+            plexUrl={
+              deepLinks.mediaUrl?.split(/\s*,\s*/).map((url) => url.trim())[0]
+            }
             serviceUrl={''}
           />
         </div>

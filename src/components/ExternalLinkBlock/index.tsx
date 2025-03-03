@@ -35,10 +35,8 @@ const ExternalLinkBlock = ({
   return (
     <div className="flex w-full items-center justify-center space-x-5">
       {mediaUrl && (
-        <a
-          href={mediaUrl}
+        <div
           className="w-12 opacity-50 transition duration-300 hover:opacity-100"
-          target="_blank"
           rel="noreferrer"
         >
           {settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
@@ -49,7 +47,7 @@ const ExternalLinkBlock = ({
           ) : (
             <JellyfinLogo />
           )}
-        </a>
+        </div>
       )}
       {tmdbId && (
         <a
