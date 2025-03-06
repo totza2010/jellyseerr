@@ -491,6 +491,7 @@ class PlexScanner
           return plexEpisode
             ? {
                 episodeNumber: plexEpisode.index,
+                airDate: episode.air_date,
                 ratingKey: plexEpisode.ratingKey,
                 part: JSON.stringify(
                   plexEpisode.Media.flatMap((media) =>
@@ -509,6 +510,7 @@ class PlexScanner
               }
             : {
                 episodeNumber: episode.episode_number,
+                airDate: episode.air_date,
                 ratingKey: null,
                 part: null,
               };
@@ -547,6 +549,7 @@ class PlexScanner
       } else {
         const allEpisodes = tvShowSeason.episodes.map((episode) => ({
           episodeNumber: episode.episode_number,
+          airDate: episode.air_date,
           ratingKey: null,
           part: null,
         }));

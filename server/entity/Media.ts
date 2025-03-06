@@ -21,6 +21,7 @@ import {
   OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import Issue from './Issue';
@@ -28,6 +29,7 @@ import { MediaRequest } from './MediaRequest';
 import Season from './Season';
 
 @Entity()
+@Unique(['tmdbId', 'mediaType'])
 class Media {
   public static async getRelatedMedia(
     user: User | undefined,

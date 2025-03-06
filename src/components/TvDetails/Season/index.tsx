@@ -241,8 +241,14 @@ const Season = ({
               return (
                 !invalidStatuses.includes(episodeData.status) &&
                 !invalidStatuses.includes(episodeData.status4k) &&
-                tv?.mediaInfo?.status !== MediaStatus.UNKNOWN &&
-                tv?.mediaInfo?.status4k !== MediaStatus.UNKNOWN
+                !(
+                  tv?.mediaInfo?.status === MediaStatus.UNKNOWN &&
+                  tv?.mediaInfo?.status4k === MediaStatus.UNKNOWN
+                ) &&
+                !(
+                  episodeData.status === MediaStatus.DISABLED &&
+                  episodeData.status4k === MediaStatus.DISABLED
+                )
               );
             };
 
@@ -265,7 +271,7 @@ const Season = ({
                         >
                           <Button
                             buttonType={'ghost'}
-                            className="z-40 mr-2"
+                            className="z-40 mr-2 px-1 py-1"
                             buttonSize={'sm'}
                             onClick={() => {
                               setSelectedEpisode(episode || null);

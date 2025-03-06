@@ -9,6 +9,7 @@ import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
 import { randomUUID } from 'crypto';
+import type { QueryRunner } from 'typeorm';
 
 // Default scan rates (can be overidden)
 const BUNDLE_SIZE = 20;
@@ -56,6 +57,7 @@ export interface ProcessableSeason {
 }
 
 export interface allEpisodes {
+  airDate: string | null;
   episodeNumber: number;
   ratingKey?: string | null;
   part?: string | null;
@@ -106,129 +108,225 @@ class BaseScanner<T> {
   }
 
   private async updateMedia(media: Media) {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
-
-    try {
-      await queryRunner.startTransaction();
-
-      const mediaRepository = queryRunner.manager.getRepository(Media);
-      const seasonRepository = queryRunner.manager.getRepository(Season);
-      const episodeRepository = queryRunner.manager.getRepository(Episode);
-
-      // ถ้า media ไม่มี id -> ใช้ save() เพื่อสร้างใหม่
-      if (
-        !media.id ||
-        media.seasons?.some((s) => !s.id) ||
-        media.seasons?.some((s) => s.episodes?.some((e) => !e.id))
-      ) {
-        const savedMedia = await mediaRepository.save(media);
-        this.log(`[INFO] Saved new media with ID: ${savedMedia.id}`);
-        return;
-      }
-
-      if (!media || !media.id) return;
+    if (dataSource.options.type === 'sqlite') {
+      const mediaRepository = getRepository(Media);
+      const savedMedia = await mediaRepository.save(media);
+      this.log(`[INFO] Saved new media with ID: ${savedMedia.id}`);
+    } else {
+      const queryRunner: QueryRunner = dataSource.createQueryRunner();
+      await queryRunner.connect();
 
       try {
-        this.log(`[DEBUG] Updating media ID: ${media.id}`);
-        const dbType = dataSource.options.type;
-        const isPostgres = dbType === 'postgres';
-        const query = isPostgres
-          ? `UPDATE media SET status = $1, status4k = $2 WHERE id = $3`
-          : `UPDATE media SET status = ?, status4k = ? WHERE id = ?`;
+        await queryRunner.startTransaction();
 
-        await mediaRepository.query(query, [
-          media.status,
-          media.status4k,
-          media.id,
-        ]);
+        const mediaRepository = queryRunner.manager.getRepository(Media);
+        const seasonRepository = queryRunner.manager.getRepository(Season);
+        const episodeRepository = queryRunner.manager.getRepository(Episode);
 
-        await mediaRepository
-          .createQueryBuilder()
-          .update(Media)
-          .set({
-            tmdbId: media.tmdbId,
-            tvdbId: media.tvdbId,
-            imdbId: media.imdbId,
-            mediaAddedAt: media.mediaAddedAt,
-            ratingKey: media.ratingKey,
-            ratingKey4k: media.ratingKey4k,
-            parts: media.parts,
-            serviceId: media.serviceId,
-            serviceId4k: media.serviceId4k,
-            externalServiceId: media.externalServiceId,
-            externalServiceId4k: media.externalServiceId4k,
-            externalServiceSlug: media.externalServiceSlug,
-            externalServiceSlug4k: media.externalServiceSlug4k,
-            jellyfinMediaId: media.jellyfinMediaId,
-            jellyfinMediaId4k: media.jellyfinMediaId4k,
-          })
-          .where('id = :id', { id: media.id })
-          .execute();
-      } catch (error) {
-        this.log(`After update - media.status:: ${media.status}`);
-        this.log(`[ERROR] Failed to update media ID: ${media.id} - ${error}`);
-      }
+        try {
+          this.log(`Upserting media with tmdbId: ${media.tmdbId}...`);
+          const [savedMedia] = await mediaRepository.query(
+            `INSERT INTO media (
+              "tmdbId", "mediaType", "status", "status4k", "tvdbId", "imdbId", "mediaAddedAt",
+              "ratingKey", "ratingKey4k", "parts",
+              "serviceId", "serviceId4k",
+              "externalServiceId", "externalServiceId4k",
+              "externalServiceSlug", "externalServiceSlug4k",
+              "jellyfinMediaId", "jellyfinMediaId4k"
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9,
+              $10, $11, $12, $13, $14, $15, $16, $17, $18
+            ) ON CONFLICT ("tmdbId", "mediaType")
+            DO UPDATE SET
+              "status" = EXCLUDED."status",
+              "status4k" = EXCLUDED."status4k",
+              "tvdbId" = EXCLUDED."tvdbId",
+              "imdbId" = EXCLUDED."imdbId",
+              "mediaAddedAt" = EXCLUDED."mediaAddedAt",
+              "ratingKey" = EXCLUDED."ratingKey",
+              "ratingKey4k" = EXCLUDED."ratingKey4k",
+              "parts" = EXCLUDED."parts",
+              "serviceId" = EXCLUDED."serviceId",
+              "serviceId4k" = EXCLUDED."serviceId4k",
+              "externalServiceId" = EXCLUDED."externalServiceId",
+              "externalServiceId4k" = EXCLUDED."externalServiceId4k",
+              "externalServiceSlug" = EXCLUDED."externalServiceSlug",
+              "externalServiceSlug4k" = EXCLUDED."externalServiceSlug4k",
+              "jellyfinMediaId" = EXCLUDED."jellyfinMediaId",
+              "jellyfinMediaId4k" = EXCLUDED."jellyfinMediaId4k"
+            RETURNING id;`,
+            [
+              media.tmdbId,
+              media.mediaType,
+              media.status,
+              media.status4k,
+              media.tvdbId,
+              media.imdbId,
+              media.mediaAddedAt,
+              media.ratingKey ?? null,
+              media.ratingKey4k ?? null,
+              media.parts ?? null,
+              media.serviceId,
+              media.serviceId4k,
+              media.externalServiceId,
+              media.externalServiceId4k,
+              media.externalServiceSlug,
+              media.externalServiceSlug4k,
+              media.jellyfinMediaId,
+              media.jellyfinMediaId4k,
+            ]
+          );
 
-      for (const season of media.seasons ?? []) {
-        if (!season || !season.id) continue;
+          media.id = savedMedia?.id;
+          this.log(
+            `✅ Media ${media.tmdbId} (${media.mediaType}) saved with ID: ${media.id}`
+          );
+        } catch (error) {
+          this.log(`[ERROR] Media upsert failed: ${error}`);
+          throw error;
+        }
 
         try {
           this.log(
-            `[DEBUG] Updating season ID: ${season.id} (Media ID: ${media.id})`
+            `Upserting seasons for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
           );
-          await seasonRepository
-            .createQueryBuilder()
-            .update(Season)
-            .set({
-              seasonNumber: season.seasonNumber,
-              ratingKey: season.ratingKey,
-              ratingKey4k: season.ratingKey4k,
-              status: season.status,
-              status4k: season.status4k,
-            })
-            .where('id = :id', { id: season.id })
-            .execute();
-        } catch (error) {
+          const seasonValues = media.seasons.map((season) => [
+            season.seasonNumber,
+            season.tmdbId,
+            season.ratingKey ?? null,
+            season.ratingKey4k ?? null,
+            season.status,
+            season.status4k,
+            media.id,
+          ]);
           this.log(
-            `[ERROR] Failed to update season ID: ${season.id} (Media ID: ${media.id} - ${error})`
+            `Seasons to upsert: Season ${seasonValues
+              .map((season) => `${season[0]}`)
+              .join(', ')} (tmdbId: ${media.tmdbId})`
           );
+          const placeholders = seasonValues
+            .map(
+              (_, i) =>
+                `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${
+                  i * 7 + 4
+                }, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`
+            )
+            .join(', ');
+
+          const savedSeasons = await seasonRepository.query(
+            `INSERT INTO season ("seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "mediaId")
+            VALUES ${placeholders}
+            ON CONFLICT ("seasonNumber", "tmdbId")
+            DO UPDATE SET
+              "ratingKey" = EXCLUDED."ratingKey",
+              "ratingKey4k" = EXCLUDED."ratingKey4k",
+              "status" = EXCLUDED."status",
+              "status4k" = EXCLUDED."status4k",
+              "mediaId" = EXCLUDED."mediaId"
+            RETURNING id, "seasonNumber", "tmdbId";`,
+            seasonValues.flat()
+          );
+
+          media.seasons.forEach((season) => {
+            const matchedSeason = savedSeasons.find(
+              (saved: { seasonNumber: number; tmdbId: number }) =>
+                saved.seasonNumber === season.seasonNumber &&
+                saved.tmdbId === season.tmdbId
+            );
+            if (matchedSeason) {
+              const isNew = !season.id;
+              season.id = matchedSeason.id;
+              this.log(
+                `✅ ${isNew ? 'Added' : 'Updated'} season ${
+                  season.seasonNumber
+                } with ID: ${season.id}`
+              );
+            }
+          });
+        } catch (error) {
+          this.log(`[ERROR] Season upsert failed: ${error}`);
+          throw error;
         }
 
-        for (const episode of season.episodes ?? []) {
-          if (!episode || !episode.id) continue;
+        try {
+          this.log(
+            `Upserting episodes for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
+          );
+          const episodeValues = media.seasons.flatMap(
+            (season) =>
+              season.episodes?.map((episode) => [
+                episode.episodeNumber,
+                episode.seasonNumber,
+                episode.tmdbId,
+                episode.ratingKey ?? null,
+                episode.ratingKey4k ?? null,
+                episode.status,
+                episode.status4k,
+                episode.part,
+                season.id,
+              ]) ?? []
+          );
+          this.log(
+            `Episodes to upsert: Episode ${episodeValues
+              .map((episode) => `${episode[0]}`)
+              .join(', ')} (Season: ${media.tmdbId}) for media tmdbId: ${
+              media.tmdbId
+            }, ID: ${media.id}...`
+          );
+          const episodePlaceholders = episodeValues
+            .map(
+              (_, i) =>
+                `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}, $${
+                  i * 9 + 4
+                }, $${i * 9 + 5}, $${i * 9 + 6}, $${i * 9 + 7}, $${
+                  i * 9 + 8
+                }, $${i * 9 + 9})`
+            )
+            .join(', ');
 
-          try {
-            this.log(
-              `[DEBUG] Updating episode ID: ${episode.id} (Season ID: ${season.id})`
-            );
-            await episodeRepository
-              .createQueryBuilder()
-              .update(Episode)
-              .set({
-                episodeNumber: episode.episodeNumber,
-                ratingKey: episode.ratingKey,
-                ratingKey4k: episode.ratingKey4k,
-                status: episode.status,
-                status4k: episode.status4k,
-                part: episode.part,
-              })
-              .where('id = :id', { id: episode.id })
-              .execute();
-          } catch (error) {
-            this.log(
-              `[ERROR] Failed to update episode ID: ${episode.id} (Season ID: ${season.id} - ${error})`
-            );
-          }
+          const savedEpisodes = await episodeRepository.query(
+            `INSERT INTO episode ("episodeNumber", "seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "part", "seasonId")
+              VALUES ${episodePlaceholders}
+              ON CONFLICT ("episodeNumber", "seasonNumber", "tmdbId")
+              DO UPDATE SET
+                "ratingKey" = EXCLUDED."ratingKey",
+                "ratingKey4k" = EXCLUDED."ratingKey4k",
+                "status" = EXCLUDED."status",
+                "status4k" = EXCLUDED."status4k",
+                "part" = EXCLUDED."part",
+                "seasonId" = EXCLUDED."seasonId";`,
+            episodeValues.flat()
+          );
+
+          savedEpisodes.forEach(
+            (savedEpisode: {
+              episodeNumber: number;
+              seasonNumber: number;
+              id: number;
+            }) => {
+              const isNew = !savedEpisode.id;
+              this.log(
+                `✅ ${isNew ? 'Added' : 'Updated'} Episode ${
+                  savedEpisode.episodeNumber
+                } (Season ${savedEpisode.seasonNumber}) upserted with ID: ${
+                  savedEpisode.id
+                }`
+              );
+            }
+          );
+          this.log('Episodes upserted successfully.');
+        } catch (error) {
+          this.log(`[ERROR] Episode upsert failed: ${error}`);
+          throw error;
         }
+
+        await queryRunner.commitTransaction();
+      } catch (error) {
+        this.log(`[ERROR] Failed to upsert media: ${error}`);
+        await queryRunner.rollbackTransaction();
+      } finally {
+        await queryRunner.release();
       }
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      this.log(`[ERROR] Failed to update media ID: ${media.id} - ${error}`);
-      await queryRunner.rollbackTransaction();
-    } finally {
-      await queryRunner.release();
     }
   }
 
@@ -489,6 +587,7 @@ class BaseScanner<T> {
         const sSeason =
           sSeasonMap.get(season.seasonNumber) ??
           new Season({
+            tmdbId: tmdbId,
             seasonNumber: season.seasonNumber,
             ratingKey: !seasonIs4k ? season.ratingKey : null,
             ratingKey4k: seasonIs4k ? season.ratingKey : null,
@@ -529,17 +628,28 @@ class BaseScanner<T> {
 
           const hasRatingKey = episode.part && episode.ratingKey;
           const hasSeasonEpisodes = season.allEpisodes.some((e) => e.ratingKey);
-
+          const maxSeasonNumber = Math.max(
+            ...seasons.map((s) => s.seasonNumber)
+          );
           const calculateStatus = () =>
             ignoreData
               ? MediaStatus.IGNORED
               : hasRatingKey
               ? MediaStatus.AVAILABLE
+              : episode.airDate &&
+                new Date(episode.airDate).getTime() > new Date().getTime()
+              ? MediaStatus.DISABLED
+              : !episode.airDate &&
+                season.seasonNumber === maxSeasonNumber &&
+                season.allEpisodes.length === 1
+              ? MediaStatus.DISABLED
               : hasSeasonEpisodes
               ? MediaStatus.MISSING
               : MediaStatus.UNKNOWN;
 
           const sEpisode = new Episode({
+            tmdbId: tmdbId,
+            seasonNumber: season.seasonNumber,
             episodeNumber: episode.episodeNumber,
             ratingKey: !seasonIs4k ? episode.ratingKey : null,
             ratingKey4k: seasonIs4k ? episode.ratingKey : null,
@@ -584,10 +694,18 @@ class BaseScanner<T> {
           const statusKey = ultraHD ? 'status4k' : 'status';
           const ratingKey = ultraHD ? 'ratingKey4k' : 'ratingKey';
 
-          return sSeason.episodes.filter(
+          const availableEpisodes = sSeason.episodes.filter(
             (e) =>
               e[statusKey] !== MediaStatus.IGNORED && e.part && e[ratingKey]
           ).length;
+
+          const disabledEpisodes = sSeason.episodes.filter(
+            (e) => e[statusKey] === MediaStatus.DISABLED
+          ).length;
+
+          return availableEpisodes > 0
+            ? availableEpisodes + disabledEpisodes
+            : availableEpisodes;
         };
 
         const availableEpisodes = {
@@ -612,6 +730,13 @@ class BaseScanner<T> {
               (ultraHD ? season.is4kOverride : !season.is4kOverride)
           );
 
+        const isDisabled = () =>
+          sSeason.episodes.every(
+            (e) =>
+              e.status === MediaStatus.DISABLED &&
+              e.status4k === MediaStatus.DISABLED
+          );
+
         const processingStatus = {
           normal: isProcessing(false),
           ultraHD: isProcessing(true),
@@ -624,6 +749,7 @@ class BaseScanner<T> {
             return MediaStatus.PARTIALLY_AVAILABLE;
           if (processingStatus[ultraHD ? 'ultraHD' : 'normal'])
             return MediaStatus.PROCESSING;
+          if (isDisabled()) return MediaStatus.DISABLED;
           return MediaStatus.UNKNOWN;
         };
 
@@ -661,11 +787,17 @@ class BaseScanner<T> {
         );
 
       const getOverallStatus = (seasons: Season[], ultraHD: boolean) => {
-        const allAvailable = seasons.every(
-          (s) =>
-            hasAvailableEpisodes(s, ultraHD) &&
-            (ultraHD ? s.status4k : s.status) === MediaStatus.AVAILABLE
-        );
+        const allAvailable = seasons
+          .filter(
+            (s) =>
+              s.episodes.length > 0 &&
+              (ultraHD ? s.status4k : s.status) !== MediaStatus.DISABLED
+          )
+          .every(
+            (s) =>
+              hasAvailableEpisodes(s, ultraHD) &&
+              (ultraHD ? s.status4k : s.status) === MediaStatus.AVAILABLE
+          );
 
         return allAvailable
           ? MediaStatus.AVAILABLE

@@ -6,18 +6,25 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import Episode from './Episode';
 import Media from './Media';
 
 @Entity()
+@Unique(['seasonNumber', 'tmdbId'])
 class Season {
   @PrimaryGeneratedColumn()
   public id: number;
+
+  @Column()
+  @Index()
+  public tmdbId: number;
 
   @Column()
   public seasonNumber: number;

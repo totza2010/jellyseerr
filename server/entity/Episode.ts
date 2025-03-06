@@ -7,17 +7,27 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   OneToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import Season from './Season';
 
 @Entity()
+@Unique(['episodeNumber', 'seasonNumber', 'tmdbId'])
 class Episode {
   @PrimaryGeneratedColumn()
   public id: number;
+
+  @Column()
+  @Index()
+  public tmdbId: number;
+
+  @Column()
+  public seasonNumber: number;
 
   @Column()
   public episodeNumber: number;

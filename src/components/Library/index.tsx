@@ -455,7 +455,12 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                     .filter(
                       (s) =>
                         s.episodes.filter(
-                          (e) => e.status !== MediaStatus.IGNORED
+                          (e) =>
+                            e[
+                              s.status4k !== MediaStatus.DISABLED
+                                ? 'status4k'
+                                : 'status'
+                            ] !== MediaStatus.IGNORED
                         ).length > 0
                     )
                     .find((s) => s.seasonNumber === season.seasonNumber);
@@ -463,7 +468,13 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                   return matchingSeason?.episodes.length ? (
                     <span key={`season-${season.id}`} className="mr-2">
                       <StatusBadge
-                        status={matchingSeason?.status}
+                        status={
+                          matchingSeason[
+                            matchingSeason.status4k !== MediaStatus.DISABLED
+                              ? 'status4k'
+                              : 'status'
+                          ]
+                        }
                         episode={
                           season.seasonNumber === 0
                             ? intl.formatMessage(globalMessages.specials)
@@ -475,9 +486,13 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
                         tmdbId={item.tmdbId}
                         mediaType={item.mediaType}
                         plexUrl={
-                          seasonLinks?.mediaUrl
-                            ?.split(/\s*,\s*/)
-                            .map((url) => url.trim())[0] ?? ''
+                          matchingSeason.status4k !== MediaStatus.DISABLED
+                            ? seasonLinks?.mediaUrl4k
+                                ?.split(/\s*,\s*/)
+                                .map((url) => url.trim())[0]
+                            : seasonLinks?.mediaUrl
+                                ?.split(/\s*,\s*/)
+                                .map((url) => url.trim())[0]
                         }
                       />
                     </span>
@@ -488,18 +503,38 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
         )}
         <div className="mt-2 flex items-center text-sm sm:mt-1">
           <span className="mr-2 hidden font-bold sm:block">
-            {intl.formatMessage(globalMessages.status)}
+            {intl.formatMessage(
+              globalMessages[
+                item.status4k !== MediaStatus.DISABLED ? 'status4k' : 'status'
+              ]
+            )}
           </span>
           <StatusBadge
-            status={item.status}
-            downloadItem={item.downloadStatus}
+            status={
+              item[
+                item.status4k !== MediaStatus.DISABLED ? 'status4k' : 'status'
+              ]
+            }
+            downloadItem={
+              item[
+                item.status4k !== MediaStatus.DISABLED
+                  ? 'downloadStatus4k'
+                  : 'downloadStatus'
+              ]
+            }
             title={title && (isMovie(title) ? title.title : title.name)}
             inProgress={(item.downloadStatus ?? []).length > 0}
-            is4k={false}
+            is4k={item.status4k !== MediaStatus.DISABLED ? true : false}
             tmdbId={item.tmdbId}
             mediaType={item.mediaType}
             plexUrl={
-              deepLinks.mediaUrl?.split(/\s*,\s*/).map((url) => url.trim())[0]
+              item.status4k !== MediaStatus.DISABLED
+                ? deepLinks.mediaUrl4k
+                    ?.split(/\s*,\s*/)
+                    .map((url) => url.trim())[0]
+                : deepLinks.mediaUrl
+                    ?.split(/\s*,\s*/)
+                    .map((url) => url.trim())[0]
             }
             serviceUrl={''}
           />
