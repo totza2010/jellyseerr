@@ -32,7 +32,14 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const pageSize = req.query.take ? Number(req.query.take) : 10;
+    const includeIds = [
+      ...new Set(
+        req.query.includeIds ? req.query.includeIds.toString().split(',') : []
+      ),
+    ];
+    const pageSize = req.query.take
+      ? Number(req.query.take)
+      : Math.max(10, includeIds.length);
     const skip = req.query.skip ? Number(req.query.skip) : 0;
     const q = req.query.q ? req.query.q.toString().toLowerCase() : '';
     let query = getRepository(User).createQueryBuilder('user');
@@ -44,27 +51,33 @@ router.get('/', async (req, res, next) => {
       );
     }
 
+    if (includeIds.length > 0) {
+      query.andWhereInIds(includeIds);
+    }
+
     switch (req.query.sort) {
       case 'updated':
         query = query.orderBy('user.updatedAt', 'DESC');
         break;
       case 'displayname':
-        query = query.orderBy(
-          `CASE WHEN (user.username IS NULL OR user.username = '') THEN (
-             CASE WHEN (user.plexUsername IS NULL OR user.plexUsername = '') THEN (
-               CASE WHEN (user.jellyfinUsername IS NULL OR user.jellyfinUsername = '') THEN
-                 "user"."email"
-               ELSE
-                 LOWER(user.jellyfinUsername)
-               END)
-             ELSE
-               LOWER(user.jellyfinUsername)
-             END)
-           ELSE
-             LOWER(user.username)
-           END`,
-          'ASC'
-        );
+        query = query
+          .addSelect(
+            `CASE WHEN (user.username IS NULL OR user.username = '') THEN (
+              CASE WHEN (user.plexUsername IS NULL OR user.plexUsername = '') THEN (
+                CASE WHEN (user.jellyfinUsername IS NULL OR user.jellyfinUsername = '') THEN
+                  "user"."email"
+                ELSE
+                  LOWER(user.jellyfinUsername)
+                END)
+              ELSE
+                LOWER(user.jellyfinUsername)
+              END)
+            ELSE
+              LOWER(user.username)
+            END`,
+            'displayname_sort_key'
+          )
+          .orderBy('displayname_sort_key', 'ASC');
         break;
       case 'requests':
         query = query
@@ -84,6 +97,7 @@ router.get('/', async (req, res, next) => {
     const [users, userCount] = await query
       .take(pageSize)
       .skip(skip)
+      .distinct(true)
       .getManyAndCount();
 
     return res.status(200).json({

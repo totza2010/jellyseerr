@@ -683,7 +683,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   buttonSize={'md'}
                   onClick={() => setShowBlacklistModal(true)}
                 >
-                  <EyeSlashIcon className={'h-3'} />
+                  <EyeSlashIcon />
                 </Button>
               </Tooltip>
             )}
@@ -701,9 +701,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                       onClick={onClickWatchlistBtn}
                     >
                       {isUpdating ? (
-                        <Spinner className="h-3" />
+                        <Spinner />
                       ) : (
-                        <StarIcon className={'h-3 text-amber-300'} />
+                        <StarIcon className={'text-amber-300'} />
                       )}
                     </Button>
                   </Tooltip>
@@ -716,11 +716,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                       buttonSize={'md'}
                       onClick={onClickDeleteWatchlistBtn}
                     >
-                      {isUpdating ? (
-                        <Spinner className="h-3" />
-                      ) : (
-                        <MinusCircleIcon className={'h-3'} />
-                      )}
+                      {isUpdating ? <Spinner /> : <MinusCircleIcon />}
                     </Button>
                   </Tooltip>
                 )}
