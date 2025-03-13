@@ -787,13 +787,15 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 )}
               </>
             )}
-          <PlayButton links={mediaLinks} />
-          <OpenButton links={mediaLinksOpen} className="ml-2 px-2" />
-          <OpenButton
-            links={media4kLinksOpen}
-            className="ml-2 px-2"
-            is4k={true}
-          />
+          <div className="z-20">
+            <PlayButton links={mediaLinks} />
+            <OpenButton links={mediaLinksOpen} className="ml-2 px-2" />
+            <OpenButton
+              links={media4kLinksOpen}
+              className="ml-2 px-2"
+              is4k={true}
+            />
+          </div>
           <RequestButton
             mediaType="tv"
             onUpdate={() => revalidate()}
