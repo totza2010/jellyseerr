@@ -27,6 +27,7 @@ import { MediaServerType } from '@server/constants/server';
 import type Issue from '@server/entity/Issue';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
+import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -118,14 +119,9 @@ const IssueDetails = () => {
 
   const editFirstComment = async (newMessage: string) => {
     try {
-      const res = await fetch(`/api/v1/issueComment/${firstComment.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ message: newMessage }),
+      await axios.put(`/api/v1/issueComment/${firstComment.id}`, {
+        message: newMessage,
       });
-      if (!res.ok) throw new Error();
 
       addToast(intl.formatMessage(messages.toasteditdescriptionsuccess), {
         appearance: 'success',
@@ -142,10 +138,7 @@ const IssueDetails = () => {
 
   const updateIssueStatus = async (newStatus: 'open' | 'resolved') => {
     try {
-      const res = await fetch(`/api/v1/issue/${issueData.id}/${newStatus}`, {
-        method: 'POST',
-      });
-      if (!res.ok) throw new Error();
+      await axios.post(`/api/v1/issue/${issueData.id}/${newStatus}`);
 
       addToast(intl.formatMessage(messages.toaststatusupdated), {
         appearance: 'success',
@@ -163,10 +156,7 @@ const IssueDetails = () => {
 
   const deleteIssue = async () => {
     try {
-      const res = await fetch(`/api/v1/issue/${issueData.id}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error();
+      await axios.delete(`/api/v1/issue/${issueData.id}`);
       mutate('/api/v1/issue/count');
 
       addToast(intl.formatMessage(messages.toastissuedeleted), {
@@ -501,17 +491,9 @@ const IssueDetails = () => {
                 }}
                 validationSchema={CommentSchema}
                 onSubmit={async (values, { resetForm }) => {
-                  const res = await fetch(
-                    `/api/v1/issue/${issueData?.id}/comment`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({ message: values.message }),
-                    }
-                  );
-                  if (!res.ok) throw new Error();
+                  await axios.post(`/api/v1/issue/${issueData?.id}/comment`, {
+                    message: values.message,
+                  });
                   revalidateIssue();
                   resetForm();
                 }}
