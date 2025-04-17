@@ -2,6 +2,7 @@ import TmdbLogo from '@app/assets/tmdb_logo.svg';
 import AirDateBadge from '@app/components/AirDateBadge';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
+import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import type { OpenButtonLink } from '@app/components/Common/OpenButton';
 import OpenButton from '@app/components/Common/OpenButton';
@@ -11,17 +12,7 @@ import IgnoreModal from '@app/components/IgnoreModal';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import { MediaStatus } from '@server/constants/media';
-import type Episode from '@server/entity/Episode';
-import type {
-  Episode as EpisodeEntity,
-  SeasonWithEpisodes,
-  TvDetails,
-} from '@server/models/Tv';
-import Image from 'next/image';
-import { useCallback, useState } from 'react';
-import { useLocale } from 'react-aria';
+import type { SeasonWithEpisodes } from '@server/models/Tv';
 import { useIntl } from 'react-intl';
 import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
@@ -459,7 +450,8 @@ const Season = ({
                 </div>
                 {episode.stillPath && (
                   <div className="relative aspect-video xl:h-32">
-                    <Image
+                    <CachedImage
+                      type="tmdb"
                       className="rounded-lg object-contain"
                       src={`https://image.tmdb.org/t/p/original/${episode.stillPath}`}
                       alt=""
