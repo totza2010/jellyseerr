@@ -12,7 +12,16 @@ import IgnoreModal from '@app/components/IgnoreModal';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import type { SeasonWithEpisodes } from '@server/models/Tv';
+import { XMarkIcon } from '@heroicons/react/24/outline';
+import { MediaStatus } from '@server/constants/media';
+import type Episode from '@server/entity/Episode';
+import type {
+  Episode as EpisodeEntity,
+  SeasonWithEpisodes,
+  TvDetails,
+} from '@server/models/Tv';
+import { useCallback, useState } from 'react';
+import { useLocale } from 'react-aria';
 import { useIntl } from 'react-intl';
 import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
