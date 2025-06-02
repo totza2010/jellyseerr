@@ -730,6 +730,12 @@ class BaseScanner<T> {
               (ultraHD ? season.is4kOverride : !season.is4kOverride)
           );
 
+        const isDeleted = (ultraHD: boolean) =>
+          Boolean(
+            season.processing &&
+              (ultraHD ? season.is4kOverride : !season.is4kOverride)
+          ); // รอทำต่อ
+
         const isDisabled = () =>
           sSeason.episodes.every(
             (e) =>

@@ -190,10 +190,15 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
 
   const mediaLinks: PlayButtonLink[] = [];
 
-  const trailerUrl = data.relatedVideos
+  const trailerVideo = data.relatedVideos
     ?.filter((r) => r.type === 'Trailer')
     .sort((a, b) => a.size - b.size)
-    .pop()?.url;
+    .pop();
+  const trailerUrl =
+    trailerVideo?.site === 'YouTube' &&
+    settings.currentSettings.youtubeUrl != ''
+      ? `${settings.currentSettings.youtubeUrl}${trailerVideo?.key}`
+      : trailerVideo?.url;
 
   if (trailerUrl) {
     mediaLinks.push({
@@ -258,7 +263,8 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       .filter(
         (request) =>
           request.is4k === is4k &&
-          request.status !== MediaRequestStatus.DECLINED
+          request.status !== MediaRequestStatus.DECLINED &&
+          request.status !== MediaRequestStatus.COMPLETED
       )
       .reduce((requestedSeasons, request) => {
         return [
@@ -941,18 +947,30 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     season.seasonNumber === s.seasonNumber &&
                     s.status4k !== MediaStatus.UNKNOWN
                 );
-                const request = (data.mediaInfo?.requests ?? []).find(
-                  (r) =>
-                    !!r.seasons.find(
-                      (s) => s.seasonNumber === season.seasonNumber
-                    ) && !r.is4k
-                );
-                const request4k = (data.mediaInfo?.requests ?? []).find(
-                  (r) =>
-                    !!r.seasons.find(
-                      (s) => s.seasonNumber === season.seasonNumber
-                    ) && r.is4k
-                );
+                const request = (data.mediaInfo?.requests ?? [])
+                  .filter(
+                    (r) =>
+                      !!r.seasons.find(
+                        (s) => s.seasonNumber === season.seasonNumber
+                      ) && !r.is4k
+                  )
+                  .sort(
+                    (a, b) =>
+                      new Date(b.createdAt).getTime() -
+                      new Date(a.createdAt).getTime()
+                  )[0];
+                const request4k = (data.mediaInfo?.requests ?? [])
+                  .filter(
+                    (r) =>
+                      !!r.seasons.find(
+                        (s) => s.seasonNumber === season.seasonNumber
+                      ) && r.is4k
+                  )
+                  .sort(
+                    (a, b) =>
+                      new Date(b.createdAt).getTime() -
+                      new Date(a.createdAt).getTime()
+                  )[0];
 
                 if (season.episodeCount === 0) {
                   return null;
@@ -1054,7 +1072,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                             {((!mSeason &&
                               request?.status ===
                                 MediaRequestStatus.APPROVED) ||
-                              mSeason?.status === MediaStatus.PROCESSING) && (
+                              mSeason?.status === MediaStatus.PROCESSING ||
+                            (request?.status === MediaRequestStatus.APPROVED &&
+                              mSeason?.status === MediaStatus.DELETED)) && (
                               <>
                                 <div className="hidden md:flex">
                                   <Badge badgeType="primary">
@@ -1119,6 +1139,21 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                 </div>
                               </>
                             )}
+                          {mSeason?.status === MediaStatus.DELETED &&
+                            request?.status !== MediaRequestStatus.APPROVED && (
+                              <>
+                                <div className="hidden md:flex">
+                                  <Badge badgeType="danger">
+                                    {intl.formatMessage(globalMessages.deleted)}
+                                  </Badge>
+                                </div>
+                                <div className="flex md:hidden">
+                                  <StatusBadgeMini
+                                    status={MediaStatus.DELETED}
+                                  />
+                                </div>
+                              </>
+                            )}
                             {mSeason?.status ===
                               MediaStatus.MIXED_AVAILABILITY && (
                               <>
@@ -1139,7 +1174,10 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                             {((!mSeason4k &&
                               request4k?.status ===
                                 MediaRequestStatus.APPROVED) ||
-                              mSeason4k?.status4k === MediaStatus.PROCESSING) &&
+                              mSeason4k?.status4k === MediaStatus.PROCESSING ||
+                            (request4k?.status ===
+                              MediaRequestStatus.APPROVED &&
+                              mSeason4k?.status4k === MediaStatus.DELETED)) &&
                               show4k && (
                                 <>
                                   <div className="hidden md:flex">
@@ -1244,6 +1282,27 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                   </div>
                                 </>
                               )}
+                              {mSeason4k?.status4k === MediaStatus.DELETED &&
+                                request4k?.status !== MediaRequestStatus.APPROVED &&
+                                show4k && (
+                                  <>
+                                    <div className="hidden md:flex">
+                                      <Badge badgeType="danger">
+                                        {intl.formatMessage(messages.status4k, {
+                                          status: intl.formatMessage(
+                                            globalMessages.deleted
+                                          ),
+                                        })}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex md:hidden">
+                                      <StatusBadgeMini
+                                        status={MediaStatus.DELETED}
+                                        is4k={true}
+                                      />
+                                    </div>
+                                  </>
+                                )}
                             <ChevronDownIcon
                               className={`${
                                 open ? 'rotate-180' : ''

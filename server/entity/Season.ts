@@ -1,17 +1,16 @@
 import { MediaStatus } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
 import { getSettings } from '@server/lib/settings';
+import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
   AfterLoad,
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 import Episode from './Episode';
 import Media from './Media';
@@ -61,10 +60,14 @@ class Season {
   })
   public media: Promise<Media>;
 
-  @CreateDateColumn()
+  @DbAwareColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   public createdAt: Date;
 
-  @UpdateDateColumn()
+  @DbAwareColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+  })
   public updatedAt: Date;
 
   constructor(init?: Partial<Season>) {

@@ -193,10 +193,16 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
   const showAllStudios = data.productionCompanies.length <= minStudios + 1;
   const mediaLinks: PlayButtonLink[] = [];
 
-  const trailerUrl = data.relatedVideos
+
+  const trailerVideo = data.relatedVideos
     ?.filter((r) => r.type === 'Trailer')
     .sort((a, b) => a.size - b.size)
-    .pop()?.url;
+    .pop();
+  const trailerUrl =
+    trailerVideo?.site === 'YouTube' &&
+    settings.currentSettings.youtubeUrl != ''
+      ? `${settings.currentSettings.youtubeUrl}${trailerVideo?.key}`
+      : trailerVideo?.url;
 
   if (trailerUrl) {
     mediaLinks.push({

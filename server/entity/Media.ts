@@ -15,14 +15,12 @@ import { getHostname } from '@server/utils/getHostname';
 import {
   AfterLoad,
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
   Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 import Issue from './Issue';
 import { MediaRequest } from './MediaRequest';
@@ -113,7 +111,9 @@ class Media {
   @Column({ type: 'text', nullable: true })
   public parts?: string | null;
 
-  @OneToMany(() => MediaRequest, (request) => request.media, { cascade: true })
+  @OneToMany(() => MediaRequest, (request) => request.media, {
+    cascade: ['insert', 'remove'],
+  })
   public requests: MediaRequest[];
 
   @OneToMany(() => Watchlist, (watchlist) => watchlist.media)
@@ -131,10 +131,14 @@ class Media {
   @OneToOne(() => Blacklist, (blacklist) => blacklist.media)
   public blacklist: Promise<Blacklist>;
 
-  @CreateDateColumn()
+  @DbAwareColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   public createdAt: Date;
 
-  @UpdateDateColumn()
+  @DbAwareColumn({
+    type: 'datetime',
+    default: () => 'CURRENT_TIMESTAMP',
+    onUpdate: 'CURRENT_TIMESTAMP',
+  })
   public updatedAt: Date;
 
   /**

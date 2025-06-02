@@ -3,6 +3,7 @@ export enum MediaRequestStatus {
   APPROVED,
   DECLINED,
   FAILED,
+  COMPLETED,
 }
 
 export enum MediaType {
@@ -21,4 +22,5 @@ export enum MediaStatus {
   MIXED_AVAILABILITY,
   IGNORED,
   DISABLED,
+  DELETED,
 }
