@@ -4,10 +4,8 @@ import PlexAPI from '@server/api/plexapi';
 import type { TmdbTvDetails } from '@server/api/themoviedb/interfaces';
 import { MediaStatus } from '@server/constants/media';
 import dataSource, { getRepository } from '@server/datasource';
-import Episode from '@server/entity/Episode';
 import { Ignore } from '@server/entity/Ignore';
 import Media from '@server/entity/Media';
-import Season from '@server/entity/Season';
 import { User } from '@server/entity/User';
 import cacheManager from '@server/lib/cache';
 import type {
@@ -20,6 +18,7 @@ import BaseScanner from '@server/lib/scanners/baseScanner';
 import type { Library } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { uniqWith } from 'lodash';
+import { In, IsNull, Not } from 'typeorm';
 
 const imdbRegex = new RegExp(/imdb:\/\/(tt[0-9]+)/);
 const tmdbRegex = new RegExp(/tmdb:\/\/([0-9]+)/);
@@ -64,143 +63,78 @@ class PlexScanner
   public async run(): Promise<void> {
     const settings = getSettings();
     const sessionId = this.startRun();
+    const batchSize = 30;
     try {
       const userRepository = getRepository(User);
 
       if (!this.isRecentOnly) {
         const queryRunner = dataSource.createQueryRunner();
         await queryRunner.connect();
+        await queryRunner.startTransaction();
 
         try {
-          await queryRunner.startTransaction();
-
-          const mediaRepository = queryRunner.manager.getRepository(Media);
-          const seasonRepository = queryRunner.manager.getRepository(Season);
-          const episodeRepository = queryRunner.manager.getRepository(Episode);
+          const mediaRepo = queryRunner.manager.getRepository(Media);
 
           const statusValues = [
             MediaStatus.AVAILABLE,
             MediaStatus.PARTIALLY_AVAILABLE,
           ];
+          this.log(
+            `Beginning to update media with status: ${statusValues.join(', ')}`
+          );
 
-          this.log('🔍 Counting media to update...');
-          const mediaToUpdate = await mediaRepository
-            .createQueryBuilder('media')
-            .where(
-              '(media.status IN (:...statusValues) OR media.status4k IN (:...statusValues) OR media.ratingKey IS NOT NULL OR media.ratingKey4k IS NOT NULL OR media.parts IS NOT NULL)',
-              { statusValues }
-            )
-            .getCount();
-          this.log(`🟡 Media to update: ${mediaToUpdate}`);
+          const medias = await mediaRepo.find({
+            where: [
+              { status: In(statusValues) },
+              { status4k: In(statusValues) },
+              { ratingKey: Not(IsNull()) },
+              { ratingKey4k: Not(IsNull()) },
+              { parts: Not(IsNull()) },
+            ],
+            relations: ['seasons', 'seasons.episodes'],
+          });
 
-          this.log('🔍 Counting seasons to update...');
-          const seasonToUpdate = await seasonRepository
-            .createQueryBuilder('season')
-            .innerJoin('season.media', 'media')
-            .where(
-              '(season.status IN (:...statusValues) OR season.status4k IN (:...statusValues) OR season.ratingKey IS NOT NULL OR season.ratingKey4k IS NOT NULL)',
-              { statusValues }
-            )
-            .getCount();
-          this.log(`🟡 Seasons to update: ${seasonToUpdate}`);
+          // เคลียร์ค่าทั้งหมดใน memory ก่อน save
+          for (const media of medias) {
+            media.status = MediaStatus.DISABLED;
+            media.status4k = MediaStatus.DISABLED;
+            media.ratingKey = null;
+            media.ratingKey4k = null;
+            media.parts = null;
 
-          this.log('🔍 Counting episodes to update...');
-          const episodeToUpdate = await episodeRepository
-            .createQueryBuilder('episode')
-            .innerJoin('episode.season', 'season')
-            .innerJoin('season.media', 'media')
-            .where(
-              '(episode.status IN (:...statusValues) OR episode.status4k IN (:...statusValues) OR episode.ratingKey IS NOT NULL OR episode.ratingKey4k IS NOT NULL OR episode.part IS NOT NULL)',
-              { statusValues }
-            )
-            .getCount();
-          this.log(`🟡 Episodes to update: ${episodeToUpdate}`);
+            for (const season of media.seasons ?? []) {
+              season.status = MediaStatus.DISABLED;
+              season.status4k = MediaStatus.DISABLED;
+              season.ratingKey = null;
+              season.ratingKey4k = null;
 
-          this.log('🔄 Updating media...');
-          await mediaRepository
-            .createQueryBuilder()
-            .update(Media)
-            .set({
-              status: MediaStatus.DISABLED,
-              status4k: MediaStatus.DISABLED,
-              ratingKey: null,
-              ratingKey4k: null,
-              parts: null,
-            })
-            .where(
-              '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL)',
-              { statusValues }
-            )
-            .execute();
-          this.log('✅ Media update complete');
-
-          this.log('🔍 Fetching media IDs...');
-          const mediaIdList = await mediaRepository
-            .createQueryBuilder('media')
-            .select('media.id', 'id')
-            .getRawMany()
-            .then((rows) => rows.map((row) => row.id));
-          this.log(`🆔 Media IDs: ${JSON.stringify(mediaIdList)}`);
-
-          if (mediaIdList.length > 0) {
-            this.log('🔄 Updating seasons...');
-            await seasonRepository
-              .createQueryBuilder()
-              .update(Season)
-              .set({
-                status: MediaStatus.DISABLED,
-                status4k: MediaStatus.DISABLED,
-                ratingKey: null,
-                ratingKey4k: null,
-              })
-              .where('mediaId IN (:...mediaIds)', {
-                mediaIds: mediaIdList.length ? mediaIdList : [0],
-              })
-              .andWhere(
-                '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL)',
-                { statusValues }
-              )
-              .execute();
-            this.log('✅ Seasons update complete');
-
-            this.log('🔍 Fetching season IDs...');
-            const seasonIdList = await seasonRepository
-              .createQueryBuilder('season')
-              .select('season.id', 'id')
-              .where('season.mediaId IN (:...mediaIds)', {
-                mediaIds: mediaIdList,
-              })
-              .getRawMany()
-              .then((rows) => rows.map((row) => row.id));
-            this.log(`🆔 Season IDs: ${JSON.stringify(seasonIdList)}`);
-
-            if (seasonIdList.length > 0) {
-              this.log('🔄 Updating episodes...');
-              await episodeRepository
-                .createQueryBuilder()
-                .update(Episode)
-                .set({
-                  status: MediaStatus.DISABLED,
-                  status4k: MediaStatus.DISABLED,
-                  ratingKey: null,
-                  ratingKey4k: null,
-                  part: null,
-                })
-                .where('seasonId IN (:...seasonIds)', {
-                  seasonIds: seasonIdList.length ? seasonIdList : [0],
-                })
-                .andWhere(
-                  '(status IN (:...statusValues) OR status4k IN (:...statusValues) OR ratingKey IS NOT NULL OR ratingKey4k IS NOT NULL OR part IS NOT NULL)',
-                  { statusValues }
-                )
-                .execute();
-              this.log('✅ Episodes update complete');
+              for (const episode of season.episodes ?? []) {
+                episode.status = MediaStatus.DISABLED;
+                episode.status4k = MediaStatus.DISABLED;
+                episode.ratingKey = null;
+                episode.ratingKey4k = null;
+                episode.part = null;
+              }
             }
           }
 
+          const totalBatches = Math.ceil(medias.length / batchSize);
+          for (let i = 0; i < medias.length; i += batchSize) {
+            const chunked = medias.slice(i, i + batchSize);
+            this.log(
+              `Saving batch ${
+                Math.floor(i / batchSize) + 1
+              } of ${totalBatches} (${chunked.length} items)`
+            );
+            await mediaRepo.save(chunked);
+          }
+
           await queryRunner.commitTransaction();
+          this.log(
+            `END to update media with status: ${statusValues.join(', ')}`
+          );
         } catch (error) {
-          this.log(`[ERROR] Failed to update`);
+          this.log(`[ERROR] Failed to update: ${error}`);
           await queryRunner.rollbackTransaction();
         } finally {
           await queryRunner.release();
