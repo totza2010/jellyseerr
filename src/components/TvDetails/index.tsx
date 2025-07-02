@@ -142,7 +142,11 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     useState<boolean>(false);
   const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const { addToast } = useToasts();
+  const [isClient, setIsClient] = useState(false);
 
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   const {
     data,
     error,
@@ -1491,6 +1495,13 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 </span>
                 <span className="media-fact-value">
                   {data.productionCountries.map((c) => {
+                    const countryName = isClient
+                      ? intl.formatDisplayName(c.iso_3166_1, {
+                          type: 'region',
+                          fallback: 'none',
+                        }) ?? c.name
+                      : c.name; // ใช้ fallback name ตอน SSR
+
                     return (
                       <span
                         className="flex items-center justify-end"
@@ -1501,12 +1512,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                             className={`mr-1.5 text-xs leading-5 flag:${c.iso_3166_1}`}
                           />
                         )}
-                        <span>
-                          {intl.formatDisplayName(c.iso_3166_1, {
-                            type: 'region',
-                            fallback: 'none',
-                          }) ?? c.name}
-                        </span>
+                        <span>{countryName}</span>
                       </span>
                     );
                   })}

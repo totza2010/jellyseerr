@@ -186,138 +186,140 @@ class BaseScanner<T> {
           throw error;
         }
 
-        try {
-          this.log(
-            `Upserting seasons for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
-          );
-          const seasonValues = media.seasons.map((season) => [
-            season.seasonNumber,
-            season.tmdbId,
-            season.ratingKey ?? null,
-            season.ratingKey4k ?? null,
-            season.status,
-            season.status4k,
-            media.id,
-          ]);
-          this.log(
-            `Seasons to upsert: Season ${seasonValues
-              .map((season) => `${season[0]}`)
-              .join(', ')} (tmdbId: ${media.tmdbId})`
-          );
-          const placeholders = seasonValues
-            .map(
-              (_, i) =>
-                `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${
-                  i * 7 + 4
-                }, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`
-            )
-            .join(', ');
-
-          const savedSeasons = await seasonRepository.query(
-            `INSERT INTO season ("seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "mediaId")
-            VALUES ${placeholders}
-            ON CONFLICT ("seasonNumber", "tmdbId")
-            DO UPDATE SET
-              "ratingKey" = EXCLUDED."ratingKey",
-              "ratingKey4k" = EXCLUDED."ratingKey4k",
-              "status" = EXCLUDED."status",
-              "status4k" = EXCLUDED."status4k",
-              "mediaId" = EXCLUDED."mediaId"
-            RETURNING id, "seasonNumber", "tmdbId";`,
-            seasonValues.flat()
-          );
-
-          media.seasons.forEach((season) => {
-            const matchedSeason = savedSeasons.find(
-              (saved: { seasonNumber: number; tmdbId: number }) =>
-                saved.seasonNumber === season.seasonNumber &&
-                saved.tmdbId === season.tmdbId
+        if (media.mediaType === MediaType.TV) {
+          try {
+            this.log(
+              `Upserting seasons for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
             );
-            if (matchedSeason) {
-              const isNew = !season.id;
-              season.id = matchedSeason.id;
-              this.log(
-                `✅ ${isNew ? 'Added' : 'Updated'} season ${
-                  season.seasonNumber
-                } with ID: ${season.id}`
-              );
-            }
-          });
-        } catch (error) {
-          this.log(`[ERROR] Season upsert failed: ${error}`);
-          throw error;
-        }
+            const seasonValues = media.seasons.map((season) => [
+              season.seasonNumber,
+              season.tmdbId,
+              season.ratingKey ?? null,
+              season.ratingKey4k ?? null,
+              season.status,
+              season.status4k,
+              media.id,
+            ]);
+            this.log(
+              `Seasons to upsert: Season ${seasonValues
+                .map((season) => `${season[0]}`)
+                .join(', ')} (tmdbId: ${media.tmdbId})`
+            );
+            const placeholders = seasonValues
+              .map(
+                (_, i) =>
+                  `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${
+                    i * 7 + 4
+                  }, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`
+              )
+              .join(', ');
 
-        try {
-          this.log(
-            `Upserting episodes for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
-          );
-          const episodeValues = media.seasons.flatMap(
-            (season) =>
-              season.episodes?.map((episode) => [
-                episode.episodeNumber,
-                episode.seasonNumber,
-                episode.tmdbId,
-                episode.ratingKey ?? null,
-                episode.ratingKey4k ?? null,
-                episode.status,
-                episode.status4k,
-                episode.part,
-                season.id,
-              ]) ?? []
-          );
-          this.log(
-            `Episodes to upsert: Episode ${episodeValues
-              .map((episode) => `${episode[0]}`)
-              .join(', ')} (Season: ${media.tmdbId}) for media tmdbId: ${
-              media.tmdbId
-            }, ID: ${media.id}...`
-          );
-          const episodePlaceholders = episodeValues
-            .map(
-              (_, i) =>
-                `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}, $${
-                  i * 9 + 4
-                }, $${i * 9 + 5}, $${i * 9 + 6}, $${i * 9 + 7}, $${
-                  i * 9 + 8
-                }, $${i * 9 + 9})`
-            )
-            .join(', ');
-
-          const savedEpisodes = await episodeRepository.query(
-            `INSERT INTO episode ("episodeNumber", "seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "part", "seasonId")
-              VALUES ${episodePlaceholders}
-              ON CONFLICT ("episodeNumber", "seasonNumber", "tmdbId")
+            const savedSeasons = await seasonRepository.query(
+              `INSERT INTO season ("seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "mediaId")
+              VALUES ${placeholders}
+              ON CONFLICT ("seasonNumber", "tmdbId")
               DO UPDATE SET
                 "ratingKey" = EXCLUDED."ratingKey",
                 "ratingKey4k" = EXCLUDED."ratingKey4k",
                 "status" = EXCLUDED."status",
                 "status4k" = EXCLUDED."status4k",
-                "part" = EXCLUDED."part",
-                "seasonId" = EXCLUDED."seasonId";`,
-            episodeValues.flat()
-          );
+                "mediaId" = EXCLUDED."mediaId"
+              RETURNING id, "seasonNumber", "tmdbId";`,
+              seasonValues.flat()
+            );
 
-          savedEpisodes.forEach(
-            (savedEpisode: {
-              episodeNumber: number;
-              seasonNumber: number;
-              id: number;
-            }) => {
-              const isNew = !savedEpisode.id;
-              this.log(
-                `✅ ${isNew ? 'Added' : 'Updated'} Episode ${
-                  savedEpisode.episodeNumber
-                } (Season ${savedEpisode.seasonNumber}) upserted with ID: ${
-                  savedEpisode.id
-                }`
+            media.seasons.forEach((season) => {
+              const matchedSeason = savedSeasons.find(
+                (saved: { seasonNumber: number; tmdbId: number }) =>
+                  saved.seasonNumber === season.seasonNumber &&
+                  saved.tmdbId === season.tmdbId
               );
-            }
-          );
-          this.log('Episodes upserted successfully.');
-        } catch (error) {
-          this.log(`[ERROR] Episode upsert failed: ${error}`);
-          throw error;
+              if (matchedSeason) {
+                const isNew = !season.id;
+                season.id = matchedSeason.id;
+                this.log(
+                  `✅ ${isNew ? 'Added' : 'Updated'} season ${
+                    season.seasonNumber
+                  } with ID: ${season.id}`
+                );
+              }
+            });
+          } catch (error) {
+            this.log(`[ERROR] Season upsert failed: ${error}`);
+            throw error;
+          }
+
+          try {
+            this.log(
+              `Upserting episodes for media tmdbId: ${media.tmdbId}, ID: ${media.id}...`
+            );
+            const episodeValues = media.seasons.flatMap(
+              (season) =>
+                season.episodes?.map((episode) => [
+                  episode.episodeNumber,
+                  episode.seasonNumber,
+                  episode.tmdbId,
+                  episode.ratingKey ?? null,
+                  episode.ratingKey4k ?? null,
+                  episode.status,
+                  episode.status4k,
+                  episode.part,
+                  season.id,
+                ]) ?? []
+            );
+            this.log(
+              `Episodes to upsert: Episode ${episodeValues
+                .map((episode) => `${episode[0]}`)
+                .join(', ')} (Season: ${media.tmdbId}) for media tmdbId: ${
+                media.tmdbId
+              }, ID: ${media.id}...`
+            );
+            const episodePlaceholders = episodeValues
+              .map(
+                (_, i) =>
+                  `($${i * 9 + 1}, $${i * 9 + 2}, $${i * 9 + 3}, $${
+                    i * 9 + 4
+                  }, $${i * 9 + 5}, $${i * 9 + 6}, $${i * 9 + 7}, $${
+                    i * 9 + 8
+                  }, $${i * 9 + 9})`
+              )
+              .join(', ');
+
+            const savedEpisodes = await episodeRepository.query(
+              `INSERT INTO episode ("episodeNumber", "seasonNumber", "tmdbId", "ratingKey", "ratingKey4k", "status", "status4k", "part", "seasonId")
+                VALUES ${episodePlaceholders}
+                ON CONFLICT ("episodeNumber", "seasonNumber", "tmdbId")
+                DO UPDATE SET
+                  "ratingKey" = EXCLUDED."ratingKey",
+                  "ratingKey4k" = EXCLUDED."ratingKey4k",
+                  "status" = EXCLUDED."status",
+                  "status4k" = EXCLUDED."status4k",
+                  "part" = EXCLUDED."part",
+                  "seasonId" = EXCLUDED."seasonId";`,
+              episodeValues.flat()
+            );
+
+            savedEpisodes.forEach(
+              (savedEpisode: {
+                episodeNumber: number;
+                seasonNumber: number;
+                id: number;
+              }) => {
+                const isNew = !savedEpisode.id;
+                this.log(
+                  `✅ ${isNew ? 'Added' : 'Updated'} Episode ${
+                    savedEpisode.episodeNumber
+                  } (Season ${savedEpisode.seasonNumber}) upserted with ID: ${
+                    savedEpisode.id
+                  }`
+                );
+              }
+            );
+            this.log('Episodes upserted successfully.');
+          } catch (error) {
+            this.log(`[ERROR] Episode upsert failed: ${error}`);
+            throw error;
+          }
         }
 
         await queryRunner.commitTransaction();

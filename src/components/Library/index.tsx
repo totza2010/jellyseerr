@@ -504,40 +504,45 @@ const LibraryItem = ({ item }: LibraryItemProps) => {
         <div className="mt-2 flex items-center text-sm sm:mt-1">
           <span className="mr-2 hidden font-bold sm:block">
             {intl.formatMessage(
-              globalMessages[
-                item.status4k !== MediaStatus.DISABLED ? 'status4k' : 'status'
-              ]
+              globalMessages['status']
             )}
           </span>
-          <StatusBadge
-            status={
-              item[
-                item.status4k !== MediaStatus.DISABLED ? 'status4k' : 'status'
-              ]
-            }
-            downloadItem={
-              item[
-                item.status4k !== MediaStatus.DISABLED
-                  ? 'downloadStatus4k'
-                  : 'downloadStatus'
-              ]
-            }
-            title={title && (isMovie(title) ? title.title : title.name)}
-            inProgress={(item.downloadStatus ?? []).length > 0}
-            is4k={item.status4k !== MediaStatus.DISABLED ? true : false}
-            tmdbId={item.tmdbId}
-            mediaType={item.mediaType}
-            plexUrl={
-              item.status4k !== MediaStatus.DISABLED
-                ? deepLinks.mediaUrl4k
+          <div className="hide-scrollbar max-w-full overflow-x-auto whitespace-nowrap">
+            <span key={`status`} className="mr-2">
+              <StatusBadge
+                status={item['status']}
+                downloadItem={item['downloadStatus']}
+                title={title && (isMovie(title) ? title.title : title.name)}
+                inProgress={(item.downloadStatus ?? []).length > 0}
+                is4k={false}
+                tmdbId={item.tmdbId}
+                mediaType={item.mediaType}
+                plexUrl={
+                  deepLinks.mediaUrl
                     ?.split(/\s*,\s*/)
                     .map((url) => url.trim())[0]
-                : deepLinks.mediaUrl
+                }
+                serviceUrl={''}
+              />
+            </span>
+            <span key={`status4k`} className="mr-2">
+              <StatusBadge
+                status={item['status4k']}
+                downloadItem={item['downloadStatus4k']}
+                title={title && (isMovie(title) ? title.title : title.name)}
+                inProgress={(item.downloadStatus ?? []).length > 0}
+                is4k={item.status4k !== MediaStatus.DISABLED ? true : false}
+                tmdbId={item.tmdbId}
+                mediaType={item.mediaType}
+                plexUrl={
+                  deepLinks.mediaUrl4k
                     ?.split(/\s*,\s*/)
                     .map((url) => url.trim())[0]
-            }
-            serviceUrl={''}
-          />
+                }
+                serviceUrl={''}
+              />
+            </span>
+          </div>
         </div>
       </div>
       <Link
